@@ -1,5 +1,5 @@
 import {dimensions, makeRating} from './library.js'
-import {defaultEndpoint, defaultModel, endpointFrom, generate} from './qwen.js'
+import {defaultEndpoint, defaultModel, endpointFrom, generate} from './qwen.js?v=3'
 import {duration, hash, id, now, renderVersion, validatePhoto} from './score.js'
 import {getAudio, renderJob} from './renderer.js?v=2'
 import {all, get, photoKey, put} from './storage.js'
@@ -112,18 +112,35 @@ function renderRunList() {
 }
 
 const showTime = value => value ? new Date(value).toLocaleTimeString() : '—'
+function updateWaitingTimes() {
+  for (const item of element('single-detail').querySelectorAll('[data-wait-since]')) {
+    const seconds = Math.max(0, Math.floor((Date.now() - Date.parse(item.dataset.waitSince)) / 1000))
+    item.textContent = ' · 已等待 ' + seconds + ' 秒'
+  }
+}
+setInterval(updateWaitingTimes, 1000)
+
 function callLog(job) {
   const details = node('details')
   details.append(node('summary', '调用与合成记录（' + job.calls.length + ' 次千问请求）'))
   const items = node('ol', undefined, {className:'log'})
   for (const call of job.calls) {
     const end = call.responseEndedAt ?? call.requestEndedAt
-    const metrics = call.upstreamMs === undefined ? '请求尚未完成'
-      : '请求 ' + call.upstreamMs + ' ms · 首字节 ' + (call.firstByteMs ?? '—') + ' ms'
     const phase = phaseNames[call.phase] ?? call.phase
-    items.append(node('li', phase + ' · ' + showTime(call.requestAt) + ' → ' + showTime(end) +
-      '\n' + metrics + (call.httpStatus ? ' · HTTP ' + call.httpStatus : '') +
-      (call.validationError || call.error ? '\n' + (call.validationError || call.error) : '')))
+    const headers = call.headersMs === undefined ? '未收到可读 HTTP 响应' : '响应头 ' + call.headersMs + ' ms'
+    const firstByte = call.firstByteMs === undefined ? '' : ' · 首字节 ' + call.firstByteMs + ' ms'
+    const progress = call.outcome === 'interrupted' ? '页面已中断'
+      : call.upstreamMs !== undefined ? '请求 ' + call.upstreamMs + ' ms'
+        : call.firstByteAt ? '正在读取回包' : call.headersAt ? '已收到响应头' : '正在等待响应头'
+    const item = node('li', phase + ' · ' + showTime(call.requestAt) + ' → ' + showTime(end) +
+      '\n' + progress + ' · ' + headers + firstByte + (call.httpStatus ? ' · HTTP ' + call.httpStatus : '') +
+      (call.validationError || call.error ? '\n' + (call.validationError || call.error) : ''))
+    if (call.requestAt && !call.requestEndedAt && call.outcome !== 'interrupted' && active.has(job.id)) {
+      const live = node('span')
+      live.dataset.waitSince = call.fetchStartedAt ?? call.requestAt
+      item.append(live)
+    }
+    items.append(item)
   }
   for (const event of job.events)
     items.append(node('li', '合成 · ' + showTime(event.startedAt) + ' → ' + showTime(event.endedAt) +
@@ -141,6 +158,8 @@ async function renderSingle() {
   if (epoch !== singleRenderEpoch) return
   target.hidden = !job
   element('single-empty').hidden = Boolean(job)
+  const showLog = target.dataset.jobId === job?.id && target.querySelector('details')?.open
+  target.dataset.jobId = job?.id ?? ''
   cleanup(singleURLs)
   target.replaceChildren()
   if (!job) return
@@ -165,7 +184,10 @@ async function renderSingle() {
     retry.addEventListener('click', () => void processSingle(job))
     target.append(retry)
   }
-  target.append(callLog(job))
+  const log = callLog(job)
+  log.open = Boolean(showLog)
+  target.append(log)
+  updateWaitingTimes()
 }
 
 function config() {
@@ -185,6 +207,7 @@ function changed(job) {
 async function runSingle(job, supplied) {
   if (active.has(job.id)) return
   active.add(job.id)
+  status('single-status', '')
   element('generate-button').disabled = true
   try {
     if (!job.score) await generate(job, supplied ?? config(), changed)
@@ -536,8 +559,29 @@ element('export-ratings').addEventListener('click', event => {
     () => exportRatings(deck.id, currentRatings(), deck.photos.length), 'Ringo-听评结果')
 })
 
+async function restoreRun(run) {
+  if (!['queued', 'intent', 'arrange', 'repair', 'rendering'].includes(run.phase)) return run
+  const interrupt = async () => {
+    const latest = await get('runs', run.id)
+    if (!latest || ['ready', 'failed'].includes(latest.phase)) return latest ?? run
+    for (const call of latest.calls) {
+      if (call.requestEndedAt || call.outcome === 'interrupted') continue
+      call.outcome = 'interrupted'
+      call.interruptionObservedAt = now()
+      call.error = '页面中断，未记录到完整回包。'
+    }
+    latest.phase = 'failed'
+    latest.error = '上次处理已中断。可从已保存的阶段继续。'
+    await put('runs', latest.id, latest)
+    return latest
+  }
+  return navigator.locks
+    ? navigator.locks.request('ringo-generate-' + run.id, {ifAvailable:true}, lock => lock ? interrupt() : run)
+    : interrupt()
+}
+
 async function restore() {
-  for (const run of await all('runs')) runs.set(run.id, run)
+  for (const run of await all('runs')) runs.set(run.id, await restoreRun(run))
   selectedRun = orderedRuns()[0]?.id
   renderRunList()
   await renderSingle()

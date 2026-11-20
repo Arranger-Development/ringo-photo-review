@@ -35,7 +35,7 @@ async function fetchReply(config, phase, prompt, schema, content, job, changed, 
   const call = {
     id:id(), phase, attempt: job.attempt, provider:'dashscope', endpoint:config.endpoint, requestedModel:config.model,
     promptSha256:await hash(prompt), schemaSha256:await hash(JSON.stringify(schema)),
-    requestBytes:new Blob([body]).size, timeoutMs:240000, stream:false, thinking:false, ...extra
+    requestBytes:new Blob([body]).size, timeoutMs:240000, stream:false, thinking:false, outcome:'pending', ...extra
   }
   job.calls.push(call)
   const save = async () => { await put('runs', job.id, job); changed(job) }
@@ -46,6 +46,12 @@ async function fetchReply(config, phase, prompt, schema, content, job, changed, 
   const decoder = new TextDecoder()
   let raw = ''
   let responseBytes = 0
+  let checkpoint = Promise.resolve()
+  const saveProgress = () => {
+    const snapshot = structuredClone(job)
+    checkpoint = checkpoint.then(() => put('runs', job.id, snapshot)).catch(() => {})
+    changed(job)
+  }
   try {
     const response = await fetch(config.endpoint + '/chat/completions', {
       method:'POST', credentials:'omit', redirect:'error', signal:AbortSignal.timeout(call.timeoutMs),
@@ -57,6 +63,7 @@ async function fetchReply(config, phase, prompt, schema, content, job, changed, 
     call.exposedHeaders = Object.fromEntries(
       ['x-request-id', 'x-dashscope-request-id', 'retry-after', 'req-cost-time', 'x-envoy-upstream-service-time']
         .map(name => [name, response.headers.get(name)]).filter(([, value]) => value !== null))
+    saveProgress()
     if (response.body) {
       const reader = response.body.getReader()
       try {
@@ -66,6 +73,8 @@ async function fetchReply(config, phase, prompt, schema, content, job, changed, 
           if (call.firstByteMs === undefined && value.byteLength) {
             call.firstByteAt = now()
             call.firstByteMs = duration(begin)
+            call.responseBytes = value.byteLength
+            saveProgress()
           }
           responseBytes += value.byteLength
           if (responseBytes > 8 * 1024 * 1024) {
@@ -81,15 +90,17 @@ async function fetchReply(config, phase, prompt, schema, content, job, changed, 
     call.responseEndedAt = now()
     call.upstreamMs = duration(begin)
     const parsedAt = performance.now()
-    const envelope = JSON.parse(raw.split(config.key).join('[密钥]'))
+    let envelope
+    try { envelope = JSON.parse(raw.split(config.key).join('[密钥]')) }
+    catch (error) { if (response.ok) throw error }
     call.parseMs = duration(parsedAt)
+    call.providerRequestId = call.exposedHeaders['x-request-id'] ?? call.exposedHeaders['x-dashscope-request-id'] ?? envelope?.request_id
     if (!response.ok) {
-      call.providerErrorCode = envelope.code ?? envelope.error?.code ?? null
+      call.providerErrorCode = envelope?.code ?? envelope?.error?.code ?? null
       throw new Error('百炼返回 HTTP ' + response.status + (call.providerErrorCode ? ' · ' + call.providerErrorCode : ''))
     }
     call.returnedModel = envelope.model
     call.completionId = envelope.id
-    call.providerRequestId = call.exposedHeaders['x-request-id'] ?? call.exposedHeaders['x-dashscope-request-id'] ?? envelope.request_id
     call.usage = envelope.usage ?? null
     call.providerCreatedAt = envelope.created
     const choice = envelope.choices?.[0]
@@ -104,14 +115,23 @@ async function fetchReply(config, phase, prompt, schema, content, job, changed, 
     call.outcome = 'failed'
     call.errorType = error.name
     call.error = error.message.split(config.key).join('[密钥]')
-    if (error.name === 'TimeoutError') throw new Error('千问请求超过 240 秒，可从当前阶段重试。')
-    if (error instanceof TypeError) throw new Error('浏览器未能读取百炼回包，请检查网络和接入地址。')
+    if (error.name === 'TimeoutError') {
+      call.failureStage = call.headersAt ? 'response_body' : 'response_headers'
+      call.error = '千问请求超过 240 秒，可从当前阶段重试。'
+    } else if (error instanceof TypeError && !call.responseComplete) {
+      call.browserError = call.error
+      call.failureStage = call.headersAt ? 'response_body' : 'response_headers'
+      call.error = call.headersAt
+        ? '已收到 HTTP ' + call.httpStatus + '，但读取回包时连接断开。'
+        : '等待约 ' + Math.round(duration(begin) / 1000) + ' 秒，浏览器未收到可读的百炼 HTTP 回包。请检查接入地址的网络和系统代理。'
+    }
     throw new Error(call.error)
   } finally {
     call.responseBytes = responseBytes
     call.requestEndedAt = now()
     call.upstreamMs ??= duration(begin)
     if (raw) call.rawResponse = raw.split(config.key).join('[密钥]')
+    await checkpoint
     await save()
   }
 }
