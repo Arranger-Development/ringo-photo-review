@@ -74,8 +74,8 @@ export async function loadLibrary(file) {
         || !zip.has(folder+'photo') || jobs.has(id)) throw new Error('照片索引不一致。');
       const candidates = await json(folder+'listen.json');
       if (!Array.isArray(candidates) || candidates.length !== state.count || candidates.length < 4
-        || candidates.length > 6 || new Set(candidates.map(candidate=>candidate.id)).size !== candidates.length
-        || candidates.some((candidate,index) => candidate.label !== 'ABCDEF'[index] || !hashPattern.test(candidate.id)
+        || candidates.length > 8 || new Set(candidates.map(candidate=>candidate.id)).size !== candidates.length
+        || candidates.some((candidate,index) => candidate.label !== 'ABCDEFGH'[index] || !hashPattern.test(candidate.id)
           || !hashPattern.test(candidate.audioSha256) || !zip.has(folder+candidate.label+'.mp3')))
         throw new Error('试听清单不完整。');
       jobs.set(id,{id, name:state.name, mimeType:state.mimeType, photoSha256:state.photoSha256,
