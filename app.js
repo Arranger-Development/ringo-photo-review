@@ -1,7 +1,7 @@
 import {dimensions, makeRating} from './library.js'
 import {defaultEndpoint, defaultModel, endpointFrom, generate} from './qwen.js'
 import {duration, hash, id, now, renderVersion, validatePhoto} from './score.js'
-import {getAudio, renderJob} from './renderer.js'
+import {getAudio, renderJob} from './renderer.js?v=2'
 import {all, get, photoKey, put} from './storage.js'
 import {exportRatings, exportRuns, importDeck, mergeResults, ratingKey, saveFile, saveRating} from './packages.js'
 

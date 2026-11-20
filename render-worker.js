@@ -7,23 +7,17 @@ let engine
 let font
 let output = []
 
-async function prepare(expected) {
-  if (!engine) {
-    await JSSynth.waitForReady()
-    const base = new URL('./vendor/ffmpeg-core.js', self.location.href).href
-    const wasmURL = new URL('./vendor/ffmpeg-core.wasm', self.location.href).href
-    engine = await createFFmpegCore({mainScriptUrlOrBlob:base + '#' + btoa(JSON.stringify({wasmURL}))})
-    engine.setLogger(({message}) => output.push(message))
-  }
-  if (!font) {
-    const response = await fetch('./vendor/GeneralUser-GS.sf2')
-    if (!response.ok) throw new Error('无法下载 GeneralUser GS 音色库。')
-    const bytes = await response.arrayBuffer()
-    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
-    if (Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('') !== expected)
-      throw new Error('音色库文件和编配目录不匹配。')
-    font = bytes
-  }
+async function prepare(file, codec) {
+  await JSSynth.waitForReady()
+  engine = await createFFmpegCore({
+    instantiateWasm(imports, receive) {
+      const instance = new WebAssembly.Instance(codec, imports)
+      receive(instance, codec)
+      return instance.exports
+    }
+  })
+  engine.setLogger(({message}) => output.push(message))
+  font = await file.arrayBuffer()
 }
 
 function be(value, size) {
@@ -129,8 +123,7 @@ function measure(path, filters) {
 }
 
 async function render(score, listening, catalog, notify) {
-  await prepare(catalog.soundfontSha256)
-  const timbres = new Map(catalog.timbres.map(timbre => [timbre.id, timbre]))
+  const timbres = new Map(catalog.map(timbre => [timbre.id, timbre]))
   const rendered = []
   try {
     for (const candidate of listening) {
@@ -170,7 +163,8 @@ async function render(score, listening, catalog, notify) {
 
 self.onmessage = async ({data}) => {
   try {
-    const results = await render(data.score, data.listening, data.catalog,
+    await prepare(data.font, data.codec)
+    const results = await render(data.score, data.listening, data.timbres,
       status => self.postMessage({status}))
     self.postMessage({results})
   } catch (error) { self.postMessage({error:error.message || '音频合成失败。'}) }
