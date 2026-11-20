@@ -1,0 +1,246 @@
+{
+  "schemaVersion": 1,
+  "catalogVersion": "generaluser-gs-audition-v1",
+  "candidates": [
+    {
+      "title": "灯下木船",
+      "direction": "用拨弦和木管写无鼓二重奏，轻微摇摆呼应停泊船只，尾句保留小调张力。",
+      "bpm": 84,
+      "meter": "4/4",
+      "barCount": 4,
+      "ticksPerBeat": 480,
+      "tracks": [
+        {
+          "role": "拨弦和声",
+          "writing": "用尼龙弦拆开和弦，低音先落地，后半小节的拨弦稍微迟一点。",
+          "timbreId": "gm-nylon-guitar",
+          "events": [
+            { "startTick": 0, "durationTicks": 410, "midi": 50, "velocity": 65 },
+            { "startTick": 480, "durationTicks": 300, "midi": 57, "velocity": 60 },
+            { "startTick": 728, "durationTicks": 300, "midi": 65, "velocity": 55 },
+            { "startTick": 1332, "durationTicks": 390, "midi": 69, "velocity": 53 },
+            { "startTick": 1920, "durationTicks": 410, "midi": 46, "velocity": 65 },
+            { "startTick": 2400, "durationTicks": 300, "midi": 53, "velocity": 60 },
+            { "startTick": 2648, "durationTicks": 300, "midi": 62, "velocity": 55 },
+            { "startTick": 3252, "durationTicks": 390, "midi": 65, "velocity": 53 },
+            { "startTick": 3840, "durationTicks": 410, "midi": 43, "velocity": 65 },
+            { "startTick": 4320, "durationTicks": 300, "midi": 55, "velocity": 60 },
+            { "startTick": 4568, "durationTicks": 300, "midi": 58, "velocity": 55 },
+            { "startTick": 5172, "durationTicks": 390, "midi": 65, "velocity": 53 },
+            { "startTick": 5760, "durationTicks": 410, "midi": 45, "velocity": 65 },
+            { "startTick": 6240, "durationTicks": 300, "midi": 52, "velocity": 60 },
+            { "startTick": 6488, "durationTicks": 300, "midi": 61, "velocity": 55 },
+            { "startTick": 7092, "durationTicks": 390, "midi": 67, "velocity": 53 }
+          ]
+        },
+        {
+          "role": "木管主句",
+          "writing": "从拨弦间的空白进入，两次短回应，最后一小节收回到属方向。",
+          "timbreId": "gm-clarinet",
+          "events": [
+            { "startTick": 500, "durationTicks": 550, "midi": 69, "velocity": 66 },
+            { "startTick": 1210, "durationTicks": 420, "midi": 65, "velocity": 58 },
+            { "startTick": 2160, "durationTicks": 600, "midi": 65, "velocity": 61 },
+            { "startTick": 3180, "durationTicks": 370, "midi": 62, "velocity": 56 },
+            { "startTick": 4340, "durationTicks": 410, "midi": 67, "velocity": 62 },
+            { "startTick": 4850, "durationTicks": 580, "midi": 70, "velocity": 65 },
+            { "startTick": 6000, "durationTicks": 620, "midi": 69, "velocity": 62 },
+            { "startTick": 6800, "durationTicks": 400, "midi": 67, "velocity": 55 }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "木桶旁的微光",
+      "direction": "电钢琴铺温暖的和声，颤音琴像零星灯光，立式低音轻轻维持脉搏。",
+      "bpm": 88,
+      "meter": "4/4",
+      "barCount": 4,
+      "ticksPerBeat": 480,
+      "tracks": [
+        {
+          "role": "温暖和声",
+          "writing": "每小节打一组柔和的和弦，在长音之后留出空拍。",
+          "timbreId": "gm-electric-piano",
+          "events": [
+            { "startTick": 0, "durationTicks": 1030, "midi": 48, "velocity": 58 },
+            { "startTick": 0, "durationTicks": 1030, "midi": 55, "velocity": 58 },
+            { "startTick": 0, "durationTicks": 1030, "midi": 63, "velocity": 54 },
+            { "startTick": 0, "durationTicks": 1030, "midi": 70, "velocity": 54 },
+            { "startTick": 1920, "durationTicks": 1030, "midi": 44, "velocity": 58 },
+            { "startTick": 1920, "durationTicks": 1030, "midi": 56, "velocity": 58 },
+            { "startTick": 1920, "durationTicks": 1030, "midi": 60, "velocity": 54 },
+            { "startTick": 1920, "durationTicks": 1030, "midi": 67, "velocity": 54 },
+            { "startTick": 3840, "durationTicks": 1030, "midi": 48, "velocity": 58 },
+            { "startTick": 3840, "durationTicks": 1030, "midi": 53, "velocity": 58 },
+            { "startTick": 3840, "durationTicks": 1030, "midi": 60, "velocity": 54 },
+            { "startTick": 3840, "durationTicks": 1030, "midi": 68, "velocity": 54 },
+            { "startTick": 5760, "durationTicks": 1030, "midi": 43, "velocity": 58 },
+            { "startTick": 5760, "durationTicks": 1030, "midi": 55, "velocity": 58 },
+            { "startTick": 5760, "durationTicks": 1030, "midi": 59, "velocity": 54 },
+            { "startTick": 5760, "durationTicks": 1030, "midi": 65, "velocity": 54 }
+          ]
+        },
+        {
+          "role": "零星金属泛音",
+          "writing": "颤音琴放在和弦后半段，第三小节的上行短句作为回应。",
+          "timbreId": "gm-vibraphone",
+          "events": [
+            { "startTick": 1080, "durationTicks": 420, "midi": 75, "velocity": 60 },
+            { "startTick": 2750, "durationTicks": 320, "midi": 72, "velocity": 55 },
+            { "startTick": 4560, "durationTicks": 330, "midi": 72, "velocity": 57 },
+            { "startTick": 5064, "durationTicks": 330, "midi": 77, "velocity": 62 },
+            { "startTick": 6600, "durationTicks": 420, "midi": 71, "velocity": 56 }
+          ]
+        },
+        {
+          "role": "木质低音",
+          "writing": "底部用长根音和偶尔的尾拍过渡，给颤音琴让出高频。",
+          "timbreId": "gm-upright-bass",
+          "events": [
+            { "startTick": 0, "durationTicks": 970, "midi": 36, "velocity": 67 },
+            { "startTick": 1464, "durationTicks": 310, "midi": 34, "velocity": 55 },
+            { "startTick": 1920, "durationTicks": 1040, "midi": 32, "velocity": 67 },
+            { "startTick": 3840, "durationTicks": 1050, "midi": 41, "velocity": 63 },
+            { "startTick": 5760, "durationTicks": 860, "midi": 43, "velocity": 65 },
+            { "startTick": 7272, "durationTicks": 300, "midi": 35, "velocity": 55 }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "雾下的引航灯",
+      "direction": "把画面的静和暗扩大成低速长音，把悬念交给大提琴的少量起伏。",
+      "bpm": 78,
+      "meter": "4/4",
+      "barCount": 4,
+      "ticksPerBeat": 480,
+      "tracks": [
+        {
+          "role": "远处的持续和声",
+          "writing": "暖色铺底按小节缓慢更换配音，尽量弱奏，把明显的起音交给大提琴。",
+          "timbreId": "gm-warm-pad",
+          "events": [
+            { "startTick": 0, "durationTicks": 1690, "midi": 57, "velocity": 49 },
+            { "startTick": 0, "durationTicks": 1690, "midi": 60, "velocity": 50 },
+            { "startTick": 0, "durationTicks": 1690, "midi": 64, "velocity": 51 },
+            { "startTick": 0, "durationTicks": 1690, "midi": 71, "velocity": 52 },
+            { "startTick": 1920, "durationTicks": 1690, "midi": 57, "velocity": 49 },
+            { "startTick": 1920, "durationTicks": 1690, "midi": 60, "velocity": 50 },
+            { "startTick": 1920, "durationTicks": 1690, "midi": 65, "velocity": 51 },
+            { "startTick": 1920, "durationTicks": 1690, "midi": 69, "velocity": 52 },
+            { "startTick": 3840, "durationTicks": 1690, "midi": 55, "velocity": 49 },
+            { "startTick": 3840, "durationTicks": 1690, "midi": 59, "velocity": 50 },
+            { "startTick": 3840, "durationTicks": 1690, "midi": 62, "velocity": 51 },
+            { "startTick": 3840, "durationTicks": 1690, "midi": 69, "velocity": 52 },
+            { "startTick": 5760, "durationTicks": 1690, "midi": 56, "velocity": 49 },
+            { "startTick": 5760, "durationTicks": 1690, "midi": 59, "velocity": 50 },
+            { "startTick": 5760, "durationTicks": 1690, "midi": 62, "velocity": 51 },
+            { "startTick": 5760, "durationTicks": 1690, "midi": 64, "velocity": 52 }
+          ]
+        },
+        {
+          "role": "暗色主奏",
+          "writing": "用长音和相隔较远的两次上行，让第四小节的张力带回第一小节。",
+          "timbreId": "gm-cello",
+          "events": [
+            { "startTick": 240, "durationTicks": 1240, "midi": 57, "velocity": 65 },
+            { "startTick": 2280, "durationTicks": 1110, "midi": 53, "velocity": 61 },
+            { "startTick": 3972, "durationTicks": 685, "midi": 55, "velocity": 63 },
+            { "startTick": 4780, "durationTicks": 740, "midi": 62, "velocity": 64 },
+            { "startTick": 6010, "durationTicks": 1240, "midi": 56, "velocity": 58 }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "栈桥上的回声",
+      "direction": "用边击和带颗粒感的短和弦写港口的缓慢推进，比其他版本更有切分。",
+      "bpm": 92,
+      "meter": "4/4",
+      "barCount": 4,
+      "ticksPerBeat": 480,
+      "tracks": [
+        {
+          "role": "切分短和弦",
+          "writing": "击弦键琴让开第一拍，短和弦在弱位回应贝斯和边击。",
+          "timbreId": "gm-clavinet",
+          "events": [
+            { "startTick": 365, "durationTicks": 135, "midi": 53, "velocity": 58 },
+            { "startTick": 365, "durationTicks": 135, "midi": 57, "velocity": 58 },
+            { "startTick": 365, "durationTicks": 135, "midi": 60, "velocity": 58 },
+            { "startTick": 975, "durationTicks": 190, "midi": 53, "velocity": 52 },
+            { "startTick": 975, "durationTicks": 190, "midi": 57, "velocity": 52 },
+            { "startTick": 975, "durationTicks": 190, "midi": 60, "velocity": 52 },
+            { "startTick": 1570, "durationTicks": 165, "midi": 53, "velocity": 50 },
+            { "startTick": 1570, "durationTicks": 165, "midi": 57, "velocity": 50 },
+            { "startTick": 1570, "durationTicks": 165, "midi": 60, "velocity": 50 },
+            { "startTick": 2285, "durationTicks": 135, "midi": 53, "velocity": 58 },
+            { "startTick": 2285, "durationTicks": 135, "midi": 56, "velocity": 58 },
+            { "startTick": 2285, "durationTicks": 135, "midi": 60, "velocity": 58 },
+            { "startTick": 2895, "durationTicks": 190, "midi": 53, "velocity": 52 },
+            { "startTick": 2895, "durationTicks": 190, "midi": 56, "velocity": 52 },
+            { "startTick": 2895, "durationTicks": 190, "midi": 60, "velocity": 52 },
+            { "startTick": 3490, "durationTicks": 165, "midi": 53, "velocity": 50 },
+            { "startTick": 3490, "durationTicks": 165, "midi": 56, "velocity": 50 },
+            { "startTick": 3490, "durationTicks": 165, "midi": 60, "velocity": 50 },
+            { "startTick": 4205, "durationTicks": 135, "midi": 55, "velocity": 58 },
+            { "startTick": 4205, "durationTicks": 135, "midi": 60, "velocity": 58 },
+            { "startTick": 4205, "durationTicks": 135, "midi": 62, "velocity": 58 },
+            { "startTick": 4815, "durationTicks": 190, "midi": 55, "velocity": 52 },
+            { "startTick": 4815, "durationTicks": 190, "midi": 60, "velocity": 52 },
+            { "startTick": 4815, "durationTicks": 190, "midi": 62, "velocity": 52 },
+            { "startTick": 5410, "durationTicks": 165, "midi": 55, "velocity": 50 },
+            { "startTick": 5410, "durationTicks": 165, "midi": 60, "velocity": 50 },
+            { "startTick": 5410, "durationTicks": 165, "midi": 62, "velocity": 50 },
+            { "startTick": 6125, "durationTicks": 135, "midi": 55, "velocity": 58 },
+            { "startTick": 6125, "durationTicks": 135, "midi": 58, "velocity": 58 },
+            { "startTick": 6125, "durationTicks": 135, "midi": 61, "velocity": 58 },
+            { "startTick": 6735, "durationTicks": 190, "midi": 55, "velocity": 52 },
+            { "startTick": 6735, "durationTicks": 190, "midi": 58, "velocity": 52 },
+            { "startTick": 6735, "durationTicks": 190, "midi": 61, "velocity": 52 },
+            { "startTick": 7330, "durationTicks": 165, "midi": 55, "velocity": 50 },
+            { "startTick": 7330, "durationTicks": 165, "midi": 58, "velocity": 50 },
+            { "startTick": 7330, "durationTicks": 165, "midi": 61, "velocity": 50 }
+          ]
+        },
+        {
+          "role": "柔和推进低音",
+          "writing": "每小节先给根音，后半段用一个短音引向下一组和声。",
+          "timbreId": "gm-fretless-bass",
+          "events": [
+            { "startTick": 0, "durationTicks": 580, "midi": 38, "velocity": 68 },
+            { "startTick": 1190, "durationTicks": 390, "midi": 45, "velocity": 58 },
+            { "startTick": 1920, "durationTicks": 610, "midi": 41, "velocity": 67 },
+            { "startTick": 3330, "durationTicks": 290, "midi": 44, "velocity": 55 },
+            { "startTick": 3840, "durationTicks": 740, "midi": 43, "velocity": 68 },
+            { "startTick": 5090, "durationTicks": 330, "midi": 48, "velocity": 56 },
+            { "startTick": 5760, "durationTicks": 560, "midi": 45, "velocity": 67 },
+            { "startTick": 7130, "durationTicks": 330, "midi": 37, "velocity": 54 }
+          ]
+        },
+        {
+          "role": "边击和稀疏鼓点",
+          "writing": "低力度底鼓、边击和闭合踩镲，保留拍间空隙。",
+          "timbreId": "gm-standard-kit",
+          "events": [
+            { "startTick": 0, "durationTicks": 100, "midi": 36, "velocity": 60 },
+            { "startTick": 503, "durationTicks": 70, "midi": 37, "velocity": 53 },
+            { "startTick": 843, "durationTicks": 55, "midi": 42, "velocity": 43 },
+            { "startTick": 1468, "durationTicks": 75, "midi": 37, "velocity": 55 },
+            { "startTick": 1920, "durationTicks": 100, "midi": 36, "velocity": 57 },
+            { "startTick": 2429, "durationTicks": 70, "midi": 37, "velocity": 52 },
+            { "startTick": 3232, "durationTicks": 55, "midi": 42, "velocity": 44 },
+            { "startTick": 3840, "durationTicks": 100, "midi": 36, "velocity": 59 },
+            { "startTick": 4353, "durationTicks": 70, "midi": 37, "velocity": 53 },
+            { "startTick": 4682, "durationTicks": 55, "midi": 42, "velocity": 45 },
+            { "startTick": 5293, "durationTicks": 75, "midi": 37, "velocity": 53 },
+            { "startTick": 5760, "durationTicks": 100, "midi": 36, "velocity": 55 },
+            { "startTick": 6260, "durationTicks": 70, "midi": 37, "velocity": 52 },
+            { "startTick": 7000, "durationTicks": 55, "midi": 42, "velocity": 44 }
+          ]
+        }
+      ]
+    }
+  ]
+}

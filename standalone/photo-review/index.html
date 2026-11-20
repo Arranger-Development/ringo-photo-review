@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src blob:; media-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src blob:; media-src blob:; connect-src https:; form-action 'none'; base-uri 'none'">
 <title>Ringo · 照片编配听评</title>
 <style>
   :root { color-scheme:light; font-family:system-ui,"PingFang SC","Microsoft YaHei",sans-serif; background:#f3f0e8; color:#28251f; }
@@ -14,6 +14,9 @@
   header { border-bottom:1px solid #d9d3c4; padding-bottom:20px; margin-bottom:20px; }
   h1,h2,h3,p { margin:0; }
   h1 { font-size:clamp(27px,5vw,42px); font-weight:650; letter-spacing:-.045em; }
+  header nav { margin-top:12px; }
+  header a { color:#54401e; text-underline-offset:4px; }
+  header a[aria-current=page] { font-weight:650; }
   h2 { font-size:19px; }
   h3 { font-size:16px; overflow-wrap:anywhere; }
   .layout { display:grid; grid-template-columns:minmax(250px,308px) minmax(0,1fr); gap:16px; align-items:start; }
@@ -35,6 +38,7 @@
   .library { display:grid; gap:5px; max-height:325px; overflow:auto; }
   .library button { display:flex; text-align:left; align-items:center; gap:8px; min-width:0; padding:4px 7px; }
   .library button span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .library button small { flex:none; margin-left:auto; color:#665b49; }
   .library img { width:40px; height:32px; object-fit:cover; border-radius:4px; background:#e5dfd3; flex:none; }
   .preview { display:block; width:100%; max-height:340px; border-radius:9px; object-fit:contain; background:#e5dfd3; }
   .candidates { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
@@ -51,16 +55,40 @@
 </head>
 <body>
 <main>
-  <header><h1>Ringo 照片编配听评</h1></header>
+  <header>
+    <h1>Ringo 照片编配听评</h1>
+    <nav class="actions" aria-label="工作台模式">
+      <a id="online-mode" href="?mode=online">在线工作台</a>
+      <a id="offline-mode" href="?mode=offline">离线听评</a>
+    </nav>
+  </header>
   <div class="layout">
     <aside class="panel stack" aria-labelledby="library-heading">
       <h2 id="library-heading">评分库</h2>
-      <label for="library-file">导入完整听评库 ZIP</label>
-      <input type="file" id="library-file" accept=".zip,application/zip">
-      <p class="muted">选择含原图和 MP3 的 ZIP，文件在当前浏览器读取。</p>
+      <div id="offline-tools" class="stack">
+        <label for="library-file">导入完整听评库 ZIP</label>
+        <input type="file" id="library-file" accept=".zip,application/zip">
+        <p class="muted">选择含原图和 MP3 的 ZIP，文件在当前浏览器读取。</p>
+      </div>
+      <div id="online-tools" class="stack" hidden>
+        <form id="login" class="stack">
+          <label>受邀邮箱<input id="email" type="email" autocomplete="username" required></label>
+          <label>邀请口令<input id="invite-code" type="password" autocomplete="current-password" required></label>
+          <button class="primary" type="submit">登录</button>
+        </form>
+        <div id="online-session" class="stack" hidden>
+          <div class="actions"><span class="muted" id="member"></span><button id="logout" type="button">退出</button></div>
+          <form id="upload" class="stack">
+            <label>上传一张照片<input id="upload-photo" type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" required></label>
+            <label>生成套数<select id="variants"><option selected>6</option><option>7</option><option>8</option></select></label>
+            <button type="submit" class="primary">生成试听</button>
+          </form>
+          <p class="status" id="upload-status" role="status"></p>
+        </div>
+      </div>
       <p class="status" id="import-status" role="status"></p>
       <div class="stack" id="library-controls" hidden>
-        <label>评审名<input id="rater" value="本机评审" maxlength="48" autocomplete="off"></label>
+        <label id="offline-rater">评审名<input id="rater" value="本机评审" maxlength="48" autocomplete="off"></label>
         <div class="actions" role="group" aria-label="筛选照片">
           <button id="pending" type="button" aria-pressed="true">待评</button>
           <button id="all" type="button" aria-pressed="false">全部</button>
@@ -68,6 +96,14 @@
         <p class="status" id="count" role="status"></p>
         <div class="library" id="photos" aria-label="照片列表"></div>
         <div class="actions"><button id="export" type="button">导出我的评分 JSONL</button></div>
+        <div id="online-exports" class="stack" hidden>
+          <button id="download-bundle" type="button">下载完整听评库</button>
+          <div id="admin-tools" class="stack" hidden>
+            <button id="export-all" type="button">导出汇总评分</button>
+            <label>导入离线评分 JSONL<input id="import-ratings" type="file" accept=".jsonl,.ndjson" multiple></label>
+          </div>
+          <p class="status" id="transfer-status" role="status"></p>
+        </div>
       </div>
     </aside>
     <section class="panel stack" aria-labelledby="listen-heading">

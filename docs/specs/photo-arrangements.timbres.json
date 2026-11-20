@@ -1,0 +1,29 @@
+{
+  "catalogVersion": "generaluser-gs-audition-v1",
+  "soundfont": "GeneralUser GS",
+  "timbres": [
+    { "id": "gm-piano", "name": "原声钢琴", "kind": "pitched", "midiProgram": 0, "midiMin": 36, "midiMax": 96, "tags": ["清晰", "共鸣"] },
+    { "id": "gm-electric-piano", "name": "电钢琴 1", "kind": "pitched", "midiProgram": 4, "midiMin": 43, "midiMax": 88, "tags": ["温暖", "柔和", "圆润"] },
+    { "id": "gm-clavinet", "name": "Clavinet 击弦键琴", "kind": "pitched", "midiProgram": 7, "midiMin": 45, "midiMax": 84, "tags": ["颗粒感", "短促", "切分"] },
+    { "id": "gm-vibraphone", "name": "颤音琴", "kind": "pitched", "midiProgram": 11, "midiMin": 53, "midiMax": 89, "tags": ["金属泛音", "柔和", "余韵"] },
+    { "id": "gm-nylon-guitar", "name": "尼龙弦吉他", "kind": "pitched", "midiProgram": 24, "midiMin": 40, "midiMax": 84, "tags": ["木质", "拨弦", "亲近"] },
+    { "id": "gm-upright-bass", "name": "原声低音提琴", "kind": "pitched", "midiProgram": 32, "midiMin": 28, "midiMax": 60, "tags": ["木质", "温暖", "扎实"] },
+    { "id": "gm-fretless-bass", "name": "无品电贝斯", "kind": "pitched", "midiProgram": 35, "midiMin": 28, "midiMax": 64, "tags": ["圆润", "连贯"] },
+    { "id": "gm-synth-bass", "name": "合成贝斯 1", "kind": "pitched", "midiProgram": 38, "midiMin": 24, "midiMax": 60, "tags": ["电子", "稳定", "扎实"] },
+    { "id": "gm-cello", "name": "大提琴", "kind": "pitched", "midiProgram": 42, "midiMin": 36, "midiMax": 76, "tags": ["暗色", "柔韧", "持续"] },
+    { "id": "gm-clarinet", "name": "单簧管", "kind": "pitched", "midiProgram": 71, "midiMin": 50, "midiMax": 87, "tags": ["木质", "气息", "温暖"] },
+    { "id": "gm-warm-pad", "name": "暖色合成器铺底", "kind": "pitched", "midiProgram": 89, "midiMin": 43, "midiMax": 88, "tags": ["空间感", "柔和", "持续"] },
+    {
+      "id": "gm-standard-kit",
+      "name": "通用标准鼓组与打击乐",
+      "kind": "percussion",
+      "midiProgram": 0,
+      "tags": ["节奏", "重音"],
+      "drumNotes": [
+        { "midi": 36, "name": "底鼓" }, { "midi": 37, "name": "边击" }, { "midi": 38, "name": "军鼓" },
+        { "midi": 42, "name": "闭合踩镲" }, { "midi": 46, "name": "开放踩镲" }, { "midi": 49, "name": "吊镲" },
+        { "midi": 54, "name": "铃鼓" }, { "midi": 70, "name": "沙锤" }
+      ]
+    }
+  ]
+}

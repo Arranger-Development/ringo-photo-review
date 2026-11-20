@@ -1,0 +1,116 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:ringo:photo-music-intent:v2",
+  "title": "Ringo Photo Music Intent v2",
+  "description": "第一次千问调用的输出，整份 JSON 原样作为第二次编配调用的 photoIntent。无法判断的音乐属性用 null，没有适用项的列表用空数组。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "style",
+    "moodTags",
+    "energy",
+    "tempoBpmRange",
+    "groove",
+    "rhythmicDensity",
+    "harmonyCharacter",
+    "timbreTags"
+  ],
+  "properties": {
+    "summary": {
+      "description": "一句可执行的听感目标，说明各套编配共同要达到的整体效果或乐句走向。",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "style": {
+      "description": "一个建议的风格或融合方向。首轮照片不限于单一流派。",
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "moodTags": {
+      "description": "与照片相符的听感关键词，例如安静、紧张、怀旧。",
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 24
+      }
+    },
+    "energy": {
+      "description": "期望的整体动感，1 最平静，5 最强烈。",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 5
+    },
+    "tempoBpmRange": {
+      "description": "建议速度区间，单位 BPM。min 不大于 max，由后端复核。具体 BPM 由编配调用决定。",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "min",
+        "max"
+      ],
+      "properties": {
+        "min": {
+          "type": "integer",
+          "minimum": 40,
+          "maximum": 240
+        },
+        "max": {
+          "type": "integer",
+          "minimum": 40,
+          "maximum": 240
+        }
+      }
+    },
+    "groove": {
+      "description": "对律动的简短听感描述，例如轻微摇摆、稳定向前或短促切分。",
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "rhythmicDensity": {
+      "description": "期望的整体起音疏密；可以与整体动感不同。",
+      "enum": [
+        "sparse",
+        "medium",
+        "dense",
+        null
+      ]
+    },
+    "harmonyCharacter": {
+      "description": "建议的和声色彩，例如冷调小调感或带柔和张力；具体调性和和弦由编配调用决定。",
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "timbreTags": {
+      "description": "希望听到的音色质感，例如木质、柔和、有颗粒感。使用质感词，具体音色 ID 由编配调用从音色目录选择。",
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 24
+      }
+    }
+  }
+}

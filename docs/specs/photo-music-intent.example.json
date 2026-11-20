@@ -1,0 +1,22 @@
+{
+  "summary": "像一段黄昏港口的独白，先留白，再出现短句回应，末尾保留一点悬念接回开头。",
+  "style": "电影感暗色民谣",
+  "moodTags": [
+    "怀旧",
+    "神秘",
+    "安静"
+  ],
+  "energy": 2,
+  "tempoBpmRange": {
+    "min": 76,
+    "max": 92
+  },
+  "groove": "轻微摇摆，重拍克制",
+  "rhythmicDensity": "sparse",
+  "harmonyCharacter": "小调色彩，带轻微的悬念",
+  "timbreTags": [
+    "木质",
+    "温暖",
+    "柔和"
+  ]
+}
