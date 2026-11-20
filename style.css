@@ -1,0 +1,58 @@
+:root { color-scheme: light; --paper: #f5f2eb; --card: #fffdfa; --ink: #242b26; --muted: #5b635d; --line: #dedfd5; --green: #174d39; --wash: #ebf3ed; --error: #a32c26; font: 15px/1.5 Inter, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--paper); color: var(--ink); margin: 0; }
+main { margin: 0 auto; max-width: 1260px; padding: 30px 28px 64px; }
+.masthead { display: flex; align-items: center; gap: 14px 22px; flex-wrap: wrap; margin-bottom: 28px; }
+.brand { font: bold 25px Georgia, serif; color: var(--green); border-right: 1px solid var(--line); padding-right: 21px; }
+h1 { font-size: 23px; margin: 0; }
+h2 { font-size: 17px; margin: 0; }
+h3 { font-size: 20px; margin: 0; overflow-wrap: anywhere; }
+p { margin: 0; }
+nav { display: flex; gap: 6px; margin-left: auto; background: #e8e7df; border-radius: 10px; padding: 4px; }
+nav a { padding: 7px 14px; color: var(--muted); text-decoration: none; border-radius: 7px; }
+nav a[aria-current] { background: var(--card); color: var(--green); font-weight: 650; }
+.workspace { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: start; gap: 18px; }
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+.stack, form { display: grid; gap: 13px; }
+.controls { color: var(--ink); }
+.card { min-height: 370px; }
+.control-row { display: flex; align-items: center; gap: 9px; justify-content: space-between; flex-wrap: wrap; }
+.library { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 16px; }
+.deck-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+label { display: grid; gap: 4px; font-size: .9rem; font-weight: 550; }
+fieldset { margin: 0; min-width: 0; }
+button, select, input, textarea { font: inherit; }
+input:not([type=checkbox]), select, textarea { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: 7px 8px; background: #fff; color: var(--ink); }
+input[type=file] { padding: 6px; font-size: .86rem; }
+input::file-selector-button { border: 0; border-radius: 4px; background: var(--wash); color: var(--green); padding: 5px 8px; margin-right: 6px; cursor: pointer; }
+button { padding: 8px 13px; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+button:disabled { opacity: .46; cursor: default; }
+button:not(:disabled):hover { border-color: var(--green); }
+.primary { background: var(--green); color: #fff; border-color: var(--green); font-weight: 600; }
+:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+details { color: var(--muted); }
+summary { cursor: pointer; }
+details label { margin-top: 8px; }
+.file-action { font-weight: 500; }
+.muted, .status { color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }
+.status:empty { display: none; }
+.error { color: var(--error); }
+.empty { padding: 45px 10px; display: grid; gap: 9px; color: var(--muted); }
+.empty h2 { color: var(--ink); font-size: 20px; }
+#run-list { list-style: none; margin: 0; padding: 1px; display: grid; gap: 4px; max-height: 190px; overflow: auto; }
+#run-list li button { display: flex; width: 100%; justify-content: space-between; gap: 8px; padding: 6px 8px; font-size: .85rem; text-align: left; }
+#run-list li button span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#run-list li button span:last-child { flex: 0 0 auto; color: var(--muted); }
+#run-list li button[aria-current] { background: var(--wash); border-color: #b5cbbd; }
+.preview { width: 100%; height: clamp(165px, 36vh, 420px); object-fit: contain; background: #edf0eb; border-radius: 9px; }
+.players { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
+.player { padding: 9px; border: 1px solid var(--line); border-radius: 8px; display: grid; gap: 5px; }
+audio { width: 100%; max-height: 42px; }
+.dimensions { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 5px; }
+.picks { display: flex; flex-wrap: wrap; gap: 10px; }
+.picks label, label.check { display: flex; align-items: center; gap: 5px; }
+.log { padding: 0 0 0 18px; overflow-wrap: anywhere; }
+.log li { padding-bottom: 5px; white-space: pre-wrap; }
+@media (max-width: 730px) { main { padding: 19px 14px 30px; } .workspace { grid-template-columns: 1fr; } .panel { padding: 16px; } }
+@media (max-width: 430px) { nav { margin-left: 0; } .players { grid-template-columns: 1fr; } }

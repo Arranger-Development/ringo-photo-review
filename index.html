@@ -1,123 +1,75 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src blob:; media-src blob:; connect-src https:; form-action 'none'; base-uri 'none'">
-<title>Ringo · 照片编配听评</title>
-<style>
-  :root { color-scheme:light; font-family:system-ui,"PingFang SC","Microsoft YaHei",sans-serif; background:#f3f0e8; color:#28251f; }
-  * { box-sizing:border-box; }
-  [hidden] { display:none !important; }
-  body { margin:0; font-size:14px; }
-  main { width:min(1120px,100%); margin:auto; padding:36px 24px 64px; }
-  header { border-bottom:1px solid #d9d3c4; padding-bottom:20px; margin-bottom:20px; }
-  h1,h2,h3,p { margin:0; }
-  h1 { font-size:clamp(27px,5vw,42px); font-weight:650; letter-spacing:-.045em; }
-  header nav { margin-top:12px; }
-  header a { color:#54401e; text-underline-offset:4px; }
-  header a[aria-current=page] { font-weight:650; }
-  h2 { font-size:19px; }
-  h3 { font-size:16px; overflow-wrap:anywhere; }
-  .layout { display:grid; grid-template-columns:minmax(250px,308px) minmax(0,1fr); gap:16px; align-items:start; }
-  .stack { display:grid; gap:12px; min-width:0; }
-  .panel { min-width:0; background:#fffcf6; border:1px solid #ded7c9; border-radius:14px; padding:17px; }
-  .muted,.status { color:#665b49; font-size:13px; line-height:1.55; overflow-wrap:anywhere; }
-  .status:empty { display:none; }
-  .error { color:#8c3325; }
-  label { display:grid; gap:5px; min-width:0; }
-  input,select,textarea,button { font:inherit; color:inherit; }
-  input:not([type=checkbox]),select,textarea { width:100%; min-width:0; padding:7px; border:1px solid #cfc7b7; border-radius:6px; background:#fffefa; }
-  input[type=checkbox] { accent-color:#705831; }
-  textarea { resize:vertical; }
-  button { padding:7px 10px; background:#fffefa; border:1px solid #c8bda8; border-radius:7px; cursor:pointer; }
-  button[aria-pressed=true] { background:#eee7d7; border-color:#776240; }
-  button.primary { background:#332c20; color:#fffcf6; border-color:#332c20; }
-  button:disabled { opacity:.58; cursor:default; }
-  .actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-  .library { display:grid; gap:5px; max-height:325px; overflow:auto; }
-  .library button { display:flex; text-align:left; align-items:center; gap:8px; min-width:0; padding:4px 7px; }
-  .library button span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .library button small { flex:none; margin-left:auto; color:#665b49; }
-  .library img { width:40px; height:32px; object-fit:cover; border-radius:4px; background:#e5dfd3; flex:none; }
-  .preview { display:block; width:100%; max-height:340px; border-radius:9px; object-fit:contain; background:#e5dfd3; }
-  .candidates { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
-  .candidate { min-width:0; display:grid; gap:9px; border:1px solid #ded7c9; border-radius:9px; padding:10px; }
-  .candidate strong { font-size:19px; }
-  audio { display:block; width:100%; height:35px; }
-  .scores { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; font-size:12px; }
-  .check { display:flex; align-items:center; gap:5px; font-size:13px; }
-  summary { cursor:pointer; }
-  details p { padding-top:7px; }
-  @media (max-width:760px) { .layout { grid-template-columns:1fr; } .library { max-height:155px; } }
-  @media (max-width:460px) { main { padding:24px 12px 40px; } .candidates { grid-template-columns:1fr; } }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self' https://*.aliyuncs.com; img-src 'self' blob:; media-src 'self' blob:; style-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Ringo · 照片编配听评</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main>
-  <header>
-    <h1>Ringo 照片编配听评</h1>
-    <nav class="actions" aria-label="工作台模式">
-      <a id="online-mode" href="?mode=online">在线工作台</a>
-      <a id="offline-mode" href="?mode=offline">离线听评</a>
+  <header class="masthead">
+    <div class="brand">Ringo</div>
+    <h1>照片编配听评</h1>
+    <nav aria-label="工作模式">
+      <a id="single-tab" href="?mode=single">单图验证</a>
+      <a id="review-tab" href="?mode=review">批量听评</a>
     </nav>
   </header>
-  <div class="layout">
-    <aside class="panel stack" aria-labelledby="library-heading">
-      <h2 id="library-heading">评分库</h2>
-      <div id="offline-tools" class="stack">
-        <label for="library-file">导入完整听评库 ZIP</label>
-        <input type="file" id="library-file" accept=".zip,application/zip">
-        <p class="muted">选择含原图和 MP3 的 ZIP，文件在当前浏览器读取。</p>
-      </div>
-      <div id="online-tools" class="stack" hidden>
-        <form id="login" class="stack">
-          <label>受邀邮箱<input id="email" type="email" autocomplete="username" required></label>
-          <label>邀请口令<input id="invite-code" type="password" autocomplete="current-password" required></label>
-          <button class="primary" type="submit">登录</button>
-        </form>
-        <div id="online-session" class="stack" hidden>
-          <div class="actions"><span class="muted" id="member"></span><button id="logout" type="button">退出</button></div>
-          <form id="upload" class="stack">
-            <label>上传一张照片<input id="upload-photo" type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" required></label>
-            <label>生成套数<select id="variants"><option selected>6</option><option>7</option><option>8</option></select></label>
-            <button type="submit" class="primary">生成试听</button>
-          </form>
-          <p class="status" id="upload-status" role="status"></p>
-        </div>
-      </div>
-      <p class="status" id="import-status" role="status"></p>
-      <div class="stack" id="library-controls" hidden>
-        <label id="offline-rater">评审名<input id="rater" value="本机评审" maxlength="48" autocomplete="off"></label>
-        <div class="actions" role="group" aria-label="筛选照片">
-          <button id="pending" type="button" aria-pressed="true">待评</button>
-          <button id="all" type="button" aria-pressed="false">全部</button>
-        </div>
-        <p class="status" id="count" role="status"></p>
-        <div class="library" id="photos" aria-label="照片列表"></div>
-        <div class="actions"><button id="export" type="button">导出我的评分 JSONL</button></div>
-        <div id="online-exports" class="stack" hidden>
-          <button id="download-bundle" type="button">下载完整听评库</button>
-          <div id="admin-tools" class="stack" hidden>
-            <button id="export-all" type="button">导出汇总评分</button>
-            <label>导入离线评分 JSONL<input id="import-ratings" type="file" accept=".jsonl,.ndjson" multiple></label>
-          </div>
-          <p class="status" id="transfer-status" role="status"></p>
-        </div>
+  <p id="fatal" class="error" hidden role="alert"></p>
+  <section id="single" class="workspace" aria-label="单图验证">
+    <aside class="panel controls">
+      <form id="generate" class="stack">
+        <h2>生成编配</h2>
+        <label>百炼 API Key<input id="key" type="password" autocomplete="off" spellcheck="false" required></label>
+        <label>选择一张照片<input id="photo-input" type="file" accept="image/jpeg,image/png" required></label>
+        <label>候选套数<select id="count"><option selected>6</option><option>7</option><option>8</option></select></label>
+        <details>
+          <summary>百炼接入设置</summary>
+          <label>Base URL<input id="endpoint" type="url" value="https://dashscope.aliyuncs.com/compatible-mode/v1" spellcheck="false" required></label>
+          <label>模型 ID<input id="model" value="qwen3.8-flash" required></label>
+        </details>
+        <button class="primary" id="generate-button" type="submit">生成试听</button>
+      </form>
+      <section class="stack library">
+        <h2>我的生成记录</h2>
+        <p class="muted" id="run-count"></p>
+        <ul id="run-list"></ul>
+        <button type="button" id="export-runs" disabled>下载完整编配 ZIP</button>
+        <label class="file-action">导入听评结果 ZIP<input type="file" id="import-results" accept=".zip,application/zip"></label>
+        <button type="button" id="export-merged" disabled>导出汇总评分 ZIP</button>
+        <p role="status" id="single-status" class="status"></p>
+      </section>
+    </aside>
+    <section class="panel card" aria-label="当前照片">
+      <div id="single-empty" class="empty"><h2>选择一张照片开始</h2><p>生成后在这里试听各套编配，原图和调用记录会保存到当前浏览器。</p></div>
+      <div id="single-detail" class="stack" hidden></div>
+    </section>
+  </section>
+
+  <section id="review" class="workspace" aria-label="批量听评" hidden>
+    <aside class="panel controls stack">
+      <h2>导入编配</h2>
+      <label>选择编配 ZIP<input id="import-deck" type="file" accept=".zip,application/zip"></label>
+      <label id="deck-control" hidden>当前听评包<select id="deck-select"></select></label>
+      <label>评审名<input id="rater" maxlength="48" autocomplete="off" placeholder="填写固定的名字"></label>
+      <p role="status" id="review-status" class="status"></p>
+      <div id="review-controls" class="stack library" hidden>
+        <h2>听评进度</h2>
+        <p id="review-progress" class="muted"></p>
+        <label>跳到照片<select id="jump"></select></label>
+        <button type="button" id="retry-renders" hidden>重试未合成的照片</button>
+        <button type="button" class="primary" id="export-ratings" disabled>下载听评结果 ZIP</button>
       </div>
     </aside>
-    <section class="panel stack" aria-labelledby="listen-heading">
-      <h2 id="listen-heading">盲听与评分</h2>
-      <p class="muted" id="empty">导入 ZIP 后，选一张照片开始听评。</p>
-      <p class="status" id="saved-status" role="status"></p>
-      <div class="stack" id="detail" hidden>
-        <h3 id="photo-name" tabindex="-1"></h3>
-        <img id="photo" class="preview" alt="当前照片">
-        <div id="review"></div>
-      </div>
+    <section class="panel card" aria-label="照片卡片">
+      <div id="review-empty" class="empty"><h2>导入一份编配包</h2><p>浏览器会逐张合成试听。已有 MP3 的听评包也可以直接打开。</p></div>
+      <div id="review-detail" class="stack" hidden></div>
     </section>
-  </div>
+  </section>
 </main>
-<script type="module" src="./review.js"></script>
+<script type="module" src="app.js"></script>
 </body>
 </html>
