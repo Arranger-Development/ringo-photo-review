@@ -40,7 +40,7 @@
         <ul id="run-list"></ul>
         <button type="button" id="export-runs" disabled>下载完整编配 ZIP</button>
         <label class="file-action">导入百炼审计 JSON<input type="file" id="import-audit" accept=".json,application/json" multiple></label>
-        <label class="file-action">导入听评结果 ZIP<input type="file" id="import-results" accept=".zip,application/zip"></label>
+        <label class="file-action">导入听评结果（ZIP 或 ratings.jsonl）<input type="file" id="import-results" accept=".zip,application/zip,.jsonl,application/x-ndjson"></label>
         <button type="button" id="export-merged" disabled>导出汇总评分 ZIP</button>
         <p role="status" id="single-status" class="status"></p>
       </section>
@@ -54,7 +54,10 @@
   <section id="review" class="workspace" aria-label="批量听评" hidden>
     <aside class="panel controls stack">
       <h2>导入编配</h2>
-      <label>选择编配 ZIP<input id="import-deck" type="file" accept=".zip,application/zip"></label>
+      <label>选择编配 ZIP<input id="import-deck" type="file" accept=".zip,application/zip" aria-describedby="import-deck-help"></label>
+      <label>选择解压后的编配文件夹<input id="import-deck-folder" type="file" webkitdirectory aria-describedby="import-deck-help"></label>
+      <p class="muted" id="import-deck-help">可直接选择下载的 ZIP。已解压时，请选择含 ringo.json 和 photos 的整个文件夹。</p>
+      <p role="status" id="review-import-status" class="status"></p>
       <label id="deck-control" hidden>当前听评包<select id="deck-select"></select></label>
       <label>评审名<input id="rater" maxlength="48" autocomplete="off" placeholder="填写固定的名字"></label>
       <p role="status" id="review-status" class="status"></p>
@@ -72,6 +75,6 @@
     </section>
   </section>
 </main>
-<script type="module" src="app.js?v=5"></script>
+<script type="module" src="app.js?v=6"></script>
 </body>
 </html>

@@ -3,7 +3,7 @@ import {defaultEndpoint, defaultModel, endpointFrom, generate} from './qwen.js?v
 import {duration, hash, id, now, renderVersion, validatePhoto} from './score.js'
 import {getAudio, renderJob} from './renderer.js?v=3'
 import {all, allKeys, get, photoKey, put} from './storage.js?v=2'
-import {exportRatings, exportRuns, importDeck, mergeResults, ratingKey, saveFile, saveRating} from './packages.js?v=3'
+import {exportRatings, exportRuns, importDeck, mergeResults, ratingKey, saveFile, saveRating} from './packages.js?v=4'
 import {failure, importAuditFiles, recordEvent, redactText, startTrace} from './diagnostics.js?v=1'
 
 const element = id => document.getElementById(id)
@@ -424,7 +424,10 @@ element('import-results').addEventListener('change', async event => {
   const file = input.files[0]
   if (!file) return
   input.disabled = true
-  const trace = startTrace('browser', 'rating_merge', {scope:'merge', zipBytes:file.size})
+  const sourceType = /\.jsonl$/i.test(file.name) ? 'jsonl' : 'zip'
+  const trace = startTrace('browser', 'rating_merge', {scope:'merge', sourceType,
+    sourceBytes:file.size, zipBytes:sourceType === 'zip' ? file.size : undefined})
+  status('single-status', '正在检查并合并评分…')
   try {
     const {added, skipped, sourcePackId} = await mergeResults(file, orderedRuns())
     await trace.finish('succeeded', {added, skipped, sourcePackId})
@@ -698,28 +701,38 @@ async function openDeck(deck) {
   void processDeck()
 }
 
-element('import-deck').addEventListener('change', async event => {
+async function importReview(event) {
   const input = event.currentTarget
-  const file = input.files[0]
-  if (!file) return
-  input.disabled = true
-  status('review-status', '正在检查并导入 ZIP…')
-  const trace = startTrace('browser', 'zip_import', {scope:'review', zipBytes:file.size})
+  const files = [...input.files]
+  if (!files.length) return
+  const folder = input.id === 'import-deck-folder'
+  const controls = [element('import-deck'), element('import-deck-folder')]
+  for (const control of controls) control.disabled = true
+  status('review-import-status', folder ? '正在检查编配文件夹…' : '正在检查并导入 ZIP…')
+  const trace = startTrace('browser', folder ? 'folder_import' : 'zip_import', {
+    scope:'review', sourceType:folder ? 'folder' : 'zip', fileCount:files.length,
+    zipBytes:folder ? undefined : files[0].size
+  })
   hasArchiveLogs = true
   let importedPackId
   try {
-    const deck = await importDeck(file)
+    const deck = await importDeck(folder ? files : files[0])
     importedPackId = deck.id
     decks.set(deck.id, deck)
     await trace.finish('succeeded', {packId:deck.id, photoCount:deck.photos.length, skipped:deck.skipped})
-    status('review-status', '导入完成 · ' + deck.photos.length + ' 张。')
+    status('review-import-status', '导入完成 · ' + deck.photos.length + ' 张。')
     await openDeck(deck)
   } catch (error) {
-    await trace.finish('failed', {packId:importedPackId, ...diagnosticFailure(error, 'zip_import_failed')})
-    status('review-status', error.message, true)
+    await trace.finish('failed', {packId:importedPackId,
+      ...diagnosticFailure(error, folder ? 'folder_import_failed' : 'zip_import_failed')})
+    status('review-import-status', error.message, true)
+  } finally {
+    input.value = ''
+    for (const control of controls) control.disabled = false
+    renderRunList()
   }
-  finally { input.disabled = false; input.value = ''; renderRunList() }
-})
+}
+for (const field of ['import-deck', 'import-deck-folder']) element(field).addEventListener('change', importReview)
 element('deck-select').addEventListener('change', event => {
   void openDeck(decks.get(event.currentTarget.value)).catch(error => status('review-status', error.message, true))
 })

@@ -7,6 +7,7 @@ import {all, audioKey, get, photoKey, put} from './storage.js?v=2'
 import {logSchemaVersion, readDiagnostics, redactResponse, requestId, requestLinks, sanitize} from './diagnostics.js?v=1'
 
 const partLimit = 8 * 1024 * 1024
+const ratingsLimit = 32 * 1024 * 1024
 const bundleLimit = 0xffffffff
 const makeJson = value => new Blob([JSON.stringify(value, null, 2) + '\n'])
 const compatibility = 'ringo-photo-arrangements'
@@ -165,10 +166,10 @@ async function json(zip, name, limit = partLimit) {
   return JSON.parse(await (await zip.read(name, limit)).text())
 }
 
-async function prepareDeck(file) {
-  const zip = await openZip(file)
-  if (!zip.has('ringo.json')) return prepareLegacyDeck(file)
-  const manifest = await json(zip, 'ringo.json', 1024 * 1024)
+async function prepareDeck(archive, name) {
+  const manifest = await json(archive, 'ringo.json', 1024 * 1024)
+  if (manifest.format === resultsFormat)
+    throw new Error('这是评分结果。请到「单图验证」的「导入听评结果」导入。')
   if (manifest.format !== compatibility || manifest.schemaVersion !== 1 || !photoIdPattern.test(manifest.packId) ||
     !Array.isArray(manifest.photos) || !manifest.photos.length || manifest.photos.length > 5000 ||
     manifest.photos.some(id => typeof id !== 'string' || !photoIdPattern.test(id)) ||
@@ -182,8 +183,8 @@ async function prepareDeck(file) {
   let skipped = 0
   for (const id of manifest.photos) {
     const folder = 'photos/' + id + '/'
-    const state = await json(zip, folder + 'state.json', 128 * 1024)
-    if (!zip.has(folder + 'arrangements.json')) {
+    const state = await json(archive, folder + 'state.json', 128 * 1024)
+    if (!archive.has(folder + 'arrangements.json')) {
       skipped++
       continue
     }
@@ -192,11 +193,11 @@ async function prepareDeck(file) {
       !Number.isInteger(state.count) || state.count < 4 || state.count > 8 || state.renderVersion !== renderVersion ||
       state.soundfontSha256 !== catalog.soundfontSha256)
       throw new Error('编配包里的照片索引或渲染版本无效。')
-    const photo = new Blob([await zip.read(folder + 'photo', photoLimit)], {type:state.mimeType})
+    const photo = new Blob([await archive.read(folder + 'photo', photoLimit)], {type:state.mimeType})
     await validatePhoto(photo)
     if (await hash(photo) !== state.photoSha256) throw new Error(state.name + ' 的照片哈希不匹配。')
-    const score = await json(zip, folder + 'arrangements.json')
-    const listening = await json(zip, folder + 'listen.json', 128 * 1024)
+    const score = await json(archive, folder + 'arrangements.json')
+    const listening = await json(archive, folder + 'listen.json', 128 * 1024)
     if (scoreIssues(score, catalog, state.count).length || !validListening(listening, state.count))
       throw new Error(state.name + ' 的编配或盲听映射无效。')
     for (const item of listening) {
@@ -207,8 +208,8 @@ async function prepareDeck(file) {
     await put('photos', photoKey(prefix, id), {...state, photo, score, listening, phase:'queued'})
     imported.push(id)
   }
-  if (!imported.length) throw new Error('ZIP 中没有可用于听评的编配。')
-  const deck = {id:prefix, name:file.name, photos:imported, skipped, selected:0, importedAt:now()}
+  if (!imported.length) throw new Error('这份编配包中没有可用于听评的记录。')
+  const deck = {id:prefix, name, photos:imported, skipped, selected:0, importedAt:now()}
   await put('decks', prefix, deck)
   return deck
 }
@@ -239,8 +240,38 @@ async function prepareLegacyDeck(file) {
   return deck
 }
 
-export function importDeck(file) {
-  return navigator.locks ? navigator.locks.request('ringo-import-deck', () => prepareDeck(file)) : prepareDeck(file)
+function openDeckFolder(files) {
+  const name = files[0]?.webkitRelativePath.split('/')[0]
+  const entries = new Map()
+  for (const file of files) {
+    const path = file.webkitRelativePath
+    if (!name || !path.startsWith(name + '/')) throw new Error('请选择一个完整的编配文件夹。')
+    entries.set(path.slice(name.length + 1), file)
+  }
+  if (!entries.has('ringo.json') || ![...entries.keys()].some(path => path.startsWith('photos/')))
+    throw new Error('请选择含 ringo.json 和 photos 的整个编配文件夹。')
+  return {name, archive:{
+    has: path => entries.has(path),
+    read: async (path, limit) => {
+      const file = entries.get(path)
+      if (!file || file.size > limit) throw new Error('文件缺失或超出大小限制：' + path)
+      return file
+    }
+  }}
+}
+
+export function importDeck(source) {
+  const load = async () => {
+    if (Array.isArray(source)) {
+      const {archive, name} = openDeckFolder(source)
+      return prepareDeck(archive, name)
+    }
+    if (/\.jsonl$/i.test(source.name))
+      throw new Error('单个 JSONL 不能用于批量听评。请选择完整编配 ZIP，或解压后的整个编配文件夹。')
+    const zip = await openZip(source)
+    return zip.has('ringo.json') ? prepareDeck(zip, source.name) : prepareLegacyDeck(source)
+  }
+  return navigator.locks ? navigator.locks.request('ringo-import-deck', load) : load()
 }
 
 export const ratingKey = (scope, record) => JSON.stringify([scope, record.photoId, record.raterId])
@@ -262,18 +293,31 @@ export async function exportRatings(packId, ratings, total) {
   return archive(entries())
 }
 
-async function mergeResultRecords(file, runs) {
+async function readResultFile(file) {
+  if (/\.jsonl$/i.test(file.name)) {
+    if (file.size > ratingsLimit) throw new Error('评分 JSONL 超出大小限制。')
+    return {received:await file.text(), fileType:'jsonl'}
+  }
   const zip = await openZip(file)
+  if (!zip.has('ringo.json')) throw new Error('请选择 Ringo 导出的听评结果 ZIP 或 ratings.jsonl。')
   const manifest = await json(zip, 'ringo.json', 1024 * 1024)
+  if (manifest.format === compatibility)
+    throw new Error('这是编配库。请到「批量听评」的「选择编配 ZIP」导入。')
   if (manifest.schemaVersion !== 1 || manifest.format !== resultsFormat)
-    throw new Error('请选择 Ringo 导出的听评结果 ZIP。')
+    throw new Error('请选择 Ringo 导出的听评结果 ZIP 或 ratings.jsonl。')
+  return {received:await (await zip.read('ratings.jsonl', ratingsLimit)).text(),
+    sourcePackId:manifest.packId, fileType:'zip'}
+}
+
+async function mergeResultRecords(file, runs) {
+  const {received, sourcePackId, fileType} = await readResultFile(file)
   const jobs = new Map(runs.filter(run => run.listening).map(run => [run.id, {...run, candidates:run.listening}]))
   const saved = await all('ratings')
   const normalized = new Map()
   for (const {scope, ...record} of saved) {
     if (scope === 'mine') mergeRating(normalized, jobs, record)
   }
-  const received = await (await zip.read('ratings.jsonl', 32 * 1024 * 1024)).text()
+  let foundRatings = false
   let added = 0
   let skipped = 0
   for (const line of received.split('\n')) {
@@ -281,13 +325,16 @@ async function mergeResultRecords(file, runs) {
     let record
     try { record = JSON.parse(line) } catch { skipped++; continue }
     if (!record || typeof record !== 'object') { skipped++; continue }
+    if (record.scores && typeof record.raterId === 'string' && typeof record.photoId === 'string') foundRatings = true
     const latest = normalized.get(JSON.stringify([record.photoId, record.raterId]))
     if ((latest && Date.parse(latest.ratedAt) >= Date.parse(record.ratedAt))
       || !mergeRating(normalized, jobs, record)) { skipped++; continue }
     await saveRating('mine', record)
     added++
   }
-  return {added, skipped, sourcePackId:manifest.packId}
+  if (fileType === 'jsonl' && !foundRatings)
+    throw new Error('这个 JSONL 中没有评分。请选择评分 ZIP 或其中的 ratings.jsonl。')
+  return {added, skipped, sourcePackId}
 }
 
 export function mergeResults(file, runs) {
