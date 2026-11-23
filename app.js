@@ -1,10 +1,10 @@
 import {dimensions, makeRating} from './library.js'
-import {defaultEndpoint, defaultModel, endpointFrom, generate} from './qwen.js?v=5'
+import {defaultEndpoint, defaultModel, endpointFrom, generate} from './qwen.js?v=6'
 import {duration, hash, id, now, renderVersion, validatePhoto} from './score.js'
-import {getAudio, renderJob} from './renderer.js?v=3'
+import {getAudio, renderJob} from './renderer.js?v=4'
 import {all, allKeys, get, photoKey, put} from './storage.js?v=2'
-import {exportRatings, exportRuns, importDeck, mergeResults, ratingKey, saveFile, saveRating} from './packages.js?v=4'
-import {failure, importAuditFiles, recordEvent, redactText, startTrace} from './diagnostics.js?v=1'
+import {exportRatings, exportRuns, importDeck, mergeResults, ratingKey, saveFile, saveRating} from './packages.js?v=5'
+import {failure, importAuditFiles, recordEvent, redactText, startTrace} from './diagnostics.js?v=2'
 
 const element = id => document.getElementById(id)
 const phaseNames = {queued:'待生成', intent:'千问读图', arrange:'千问编配', repair:'补生成',
@@ -404,18 +404,27 @@ element('export-runs').addEventListener('click', event => {
 })
 element('import-audit').addEventListener('change', async event => {
   const input = event.currentTarget
-  if (!input.files.length) return
+  const files = [...input.files]
+  if (!files.length) return
   input.disabled = true
-  const trace = startTrace('browser', 'audit_import', {scope:'generation', fileCount:input.files.length})
+  status('audit-status', '正在读取审计文件…')
+  const trace = startTrace('browser', 'audit_import', {scope:'generation', fileCount:files.length})
   hasArchiveLogs = true
   try {
-    const result = await importAuditFiles([...input.files], orderedRuns(), currentKey())
+    const result = await importAuditFiles(files, orderedRuns(), currentKey())
     await trace.finish('succeeded', result)
-    status('single-status', '审计日志 · 匹配 ' + result.matched + ' · 重复 ' + result.duplicate +
-      ' · 未匹配 ' + result.unmatched + ' · 格式错误 ' + result.invalid)
+    if (result.emptyFiles === files.length) {
+      status('audit-status', '所选文件没有审计记录。请从百炼导出审计记录后再导入。', true)
+    } else if (!(result.matched + result.unmatched + result.duplicate)) {
+      status('audit-status', '未识别到百炼审计记录。格式错误 ' + result.invalid + ' 项。', true)
+    } else {
+      status('audit-status', '审计日志 · 匹配 ' + result.matched + ' · 重复 ' + result.duplicate +
+        ' · 未匹配 ' + result.unmatched + ' · 格式错误 ' + result.invalid +
+        (result.emptyFiles ? ' · 空文件 ' + result.emptyFiles : ''))
+    }
   } catch (error) {
     await trace.finish('failed', diagnosticFailure(error, 'audit_import_failed'))
-    status('single-status', error.message, true)
+    status('audit-status', error.message, true)
   } finally { input.value = ''; input.disabled = false; renderRunList() }
 })
 
@@ -427,21 +436,23 @@ element('import-results').addEventListener('change', async event => {
   const sourceType = /\.jsonl$/i.test(file.name) ? 'jsonl' : 'zip'
   const trace = startTrace('browser', 'rating_merge', {scope:'merge', sourceType,
     sourceBytes:file.size, zipBytes:sourceType === 'zip' ? file.size : undefined})
-  status('single-status', '正在检查并合并评分…')
+  status('ratings-import-status', '正在检查并合并评分…')
   try {
     const {added, skipped, sourcePackId} = await mergeResults(file, orderedRuns())
     await trace.finish('succeeded', {added, skipped, sourcePackId})
-    status('single-status', '合并 ' + added + ' 条评分 · 跳过 ' + skipped + ' 条已有、较旧或不匹配的评分。')
+    status('ratings-import-status', '合并 ' + added + ' 条评分 · 跳过 ' + skipped + ' 条已有、较旧或不匹配的评分。')
     if (added) await renderSingle()
     await updateMerged()
   } catch (error) {
     await trace.finish('failed', diagnosticFailure(error, 'rating_merge_failed'))
-    status('single-status', error.message, true)
+    status('ratings-import-status', error.message, true)
   }
   finally { input.value = ''; input.disabled = false }
 })
 async function updateMerged() {
-  element('export-merged').disabled = !(await all('ratings')).some(item => item.scope === 'mine')
+  const hasRatings = (await all('ratings')).some(item => item.scope === 'mine')
+  element('export-merged').disabled = !hasRatings
+  element('export-merged-help').hidden = hasRatings
 }
 element('export-merged').addEventListener('click', event => {
   void withDownload(event.currentTarget, 'single-status', async () => {

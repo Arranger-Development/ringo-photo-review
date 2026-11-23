@@ -39,9 +39,13 @@
         <p class="muted" id="run-count"></p>
         <ul id="run-list"></ul>
         <button type="button" id="export-runs" disabled>下载完整编配 ZIP</button>
-        <label class="file-action">导入百炼审计 JSON<input type="file" id="import-audit" accept=".json,application/json" multiple></label>
+        <label class="file-action">导入百炼审计（JSON 或 JSONL）<input type="file" id="import-audit" accept=".json,.jsonl,.ndjson,application/json,application/x-ndjson" multiple aria-describedby="audit-help"></label>
+        <p class="muted" id="audit-help">审计日志随「下载完整编配 ZIP」导出。</p>
+        <p role="status" id="audit-status" class="status"></p>
         <label class="file-action">导入听评结果（ZIP 或 ratings.jsonl）<input type="file" id="import-results" accept=".zip,application/zip,.jsonl,application/x-ndjson"></label>
-        <button type="button" id="export-merged" disabled>导出汇总评分 ZIP</button>
+        <p role="status" id="ratings-import-status" class="status"></p>
+        <button type="button" id="export-merged" disabled aria-describedby="export-merged-help">导出汇总评分 ZIP</button>
+        <p class="muted" id="export-merged-help">保存或合并评分后可导出。</p>
         <p role="status" id="single-status" class="status"></p>
       </section>
     </aside>
@@ -75,6 +79,6 @@
     </section>
   </section>
 </main>
-<script type="module" src="app.js?v=6"></script>
+<script type="module" src="app.js?v=7"></script>
 </body>
 </html>

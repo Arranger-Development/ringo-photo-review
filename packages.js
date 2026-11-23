@@ -4,7 +4,7 @@ import {loadLibrary, mergeRating} from './library.js'
 import {hash, hashPattern, id, loadSpecs, mimeTypes, now, photoIdPattern, photoLimit,
   renderVersion, scoreIssues, validListening, validatePhoto} from './score.js'
 import {all, audioKey, get, photoKey, put} from './storage.js?v=2'
-import {logSchemaVersion, readDiagnostics, redactResponse, requestId, requestLinks, sanitize} from './diagnostics.js?v=1'
+import {logSchemaVersion, readDiagnostics, redactResponse, requestId, requestLinks, sanitize} from './diagnostics.js?v=2'
 
 const partLimit = 8 * 1024 * 1024
 const ratingsLimit = 32 * 1024 * 1024

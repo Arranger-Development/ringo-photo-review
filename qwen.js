@@ -1,7 +1,7 @@
 import {duration, hash, id, loadSpecs, makeListening, normalizeModelScore, noteFields, now,
   scoreIssues, validateIntent} from './score.js'
 import {put} from './storage.js?v=2'
-import {diagnosticsAppVersion, redactResponse, redactText, sanitize} from './diagnostics.js?v=1'
+import {diagnosticsAppVersion, redactResponse, redactText, sanitize} from './diagnostics.js?v=2'
 
 export const defaultEndpoint = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
 export const defaultModel = 'qwen3.8-flash'

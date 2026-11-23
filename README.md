@@ -14,7 +14,7 @@
 
 ## 诊断归档
 
-在单图页使用「导入百炼审计 JSON」，支持控制台复制的单条记录、记录数组和官方 CLI 的 `list` 输出。导入后显示匹配、重复、未匹配及格式错误的数量。按服务端 Request ID 精确关联，浏览器等待耗时和百炼服务端耗时各自保留。相同审计记录重复导入只存一次。未匹配的记录仍可通过「下载完整编配 ZIP」保存。 [百炼审计日志](https://help.aliyun.com/zh/model-studio/model-telemetry#审计日志) · [CLI 日志查询](https://help.aliyun.com/zh/model-studio/cli/monitor-log-alert)
+在单图页使用「导入百炼审计（JSON 或 JSONL）」，支持控制台复制的单条记录、记录数组、官方 CLI 的 `list` 输出及每行一条记录的 JSONL。导入后显示匹配、重复、未匹配及格式错误的数量。按服务端 Request ID 精确关联，浏览器等待耗时和百炼服务端耗时各自保留。相同审计记录重复导入只存一次。未匹配的记录仍可通过「下载完整编配 ZIP」保存。 [百炼审计日志](https://help.aliyun.com/zh/model-studio/model-telemetry#审计日志) · [CLI 日志查询](https://help.aliyun.com/zh/model-studio/cli/monitor-log-alert)
 
 两种 ZIP 的 `ringo.json` 通过 `diagnostics.indexPath` 指向 `logs/index.json`。索引里的 `files` 列出每个日志文件及条数，`bailian` 汇总匹配与缺失。以 `eventId` 去重，同一个操作的多条浏览器或渲染日志用 `operationId` 聚合。时间采用 UTC ISO 格式，耗时采用毫秒。存在时可用 `photoId`、`callId`、`candidateId`、`packId` 或服务端 `providerRequestId` 关联。
 

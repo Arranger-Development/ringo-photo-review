@@ -1,6 +1,6 @@
 import {hash, loadSpecs, renderVersion} from './score.js'
 import {audioKey, get, put} from './storage.js?v=2'
-import {failure, recordEvent, startTrace} from './diagnostics.js?v=1'
+import {failure, recordEvent, startTrace} from './diagnostics.js?v=2'
 
 let resources
 let queue = Promise.resolve()

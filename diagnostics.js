@@ -101,23 +101,24 @@ export function requestId(value) {
 }
 
 export function normalizeAudit(value) {
-  if (!object(value)) return undefined
+  if (!object(value) || ['browser', 'qwen', 'render'].includes(value.category)) return undefined
+  const archived = value.source === 'bailian_audit' && value.stage === 'audit' ? value : {}
   const origin = parsed(value.originLog)
   const row = {...origin, ...value}
   const usage = parsed(row.usage)
   const record = {
-    providerRequestId:requestId(row.modelRequestId ?? row.requestId ?? row.request_id),
+    providerRequestId:requestId(row.modelRequestId ?? row.requestId ?? row.request_id ?? archived.providerRequestId),
     workspaceId:textField(row.workspaceId ?? row.workspace_id),
-    calledAt:timestamp(row.startTime ?? row.start_unix_timestamp ?? row.timestamp),
+    calledAt:timestamp(row.startTime ?? row.start_unix_timestamp ?? row.timestamp ?? archived.calledAt),
     model:textField(row.model ?? row.modelName),
-    firstTokenMs:metric(row.firstTokenDuration ?? row.first_token_duration ?? row.first_token_latency),
-    durationMs:metric(row.callDuration ?? row.duration),
-    httpStatus:metric(row.httpStatusCode ?? row.status_code ?? row.statusCode),
+    firstTokenMs:metric(row.firstTokenDuration ?? row.first_token_duration ?? row.first_token_latency ?? archived.firstTokenMs),
+    durationMs:metric(row.callDuration ?? row.duration ?? archived.durationMs),
+    httpStatus:metric(row.httpStatusCode ?? row.status_code ?? row.statusCode ?? archived.httpStatus),
     errorCode:textField(row.errorCode ?? row.error_code),
-    error:textField(row.errorMessage ?? row.error_message),
-    inputTokens:metric(usage.input_tokens ?? usage.prompt_tokens),
-    outputTokens:metric(usage.output_tokens ?? usage.completion_tokens),
-    totalTokens:metric(usage.total_tokens)
+    error:textField(row.errorMessage ?? row.error_message ?? archived.error),
+    inputTokens:metric(usage.input_tokens ?? usage.prompt_tokens ?? archived.inputTokens),
+    outputTokens:metric(usage.output_tokens ?? usage.completion_tokens ?? archived.outputTokens),
+    totalTokens:metric(usage.total_tokens ?? archived.totalTokens)
   }
   if (!record.providerRequestId && !(record.calledAt && record.model) && record.durationMs === undefined &&
     record.firstTokenMs === undefined && record.httpStatus === undefined) return undefined
@@ -142,17 +143,35 @@ export function requestLinks(runs) {
   return links
 }
 
+function* auditRows(content, allowLines) {
+  let data
+  try { data = JSON.parse(content) }
+  catch {
+    if (!allowLines) { yield undefined; return }
+    for (const line of content.split('\n')) {
+      if (!line.trim()) continue
+      try { yield JSON.parse(line) }
+      catch { yield undefined }
+    }
+    return
+  }
+  const rows = Array.isArray(data) ? data : Array.isArray(data?.list) ? data.list : [data]
+  yield* rows
+}
+
 async function readAuditFiles(files, runs, secret) {
   const links = requestLinks(runs)
   const records = new Map((await all('audits')).map(item => [item.eventId, item]))
-  const result = {matched:0, duplicate:0, unmatched:0, invalid:0}
+  const result = {matched:0, duplicate:0, unmatched:0, invalid:0, emptyFiles:0}
   for (const file of files) {
-    let data
-    try { data = JSON.parse(await file.text()) }
+    let content
+    try { content = await file.text() }
     catch { result.invalid++; continue }
-    const rows = Array.isArray(data) ? data : Array.isArray(data?.list) ? data.list : [data]
-    if (!rows.length) result.invalid++
-    for (const value of rows) {
+    if (!content.trim()) { result.emptyFiles++; continue }
+    let readRows = 0
+    const allowLines = /\.(?:jsonl|ndjson)$/i.test(file.name) || file.type === 'application/x-ndjson'
+    for (const value of auditRows(content, allowLines)) {
+      readRows++
       const raw = sanitize(value, secret)
       const fields = normalizeAudit(raw)
       if (!fields) { result.invalid++; continue }
@@ -173,6 +192,7 @@ async function readAuditFiles(files, runs, secret) {
       records.set(eventId, merged)
       result[links.has(fields.providerRequestId) ? 'matched' : 'unmatched']++
     }
+    if (!readRows) result.emptyFiles++
   }
   return result
 }
