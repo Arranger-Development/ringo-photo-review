@@ -34,6 +34,7 @@
         <button class="primary" id="generate-button" type="submit">生成试听</button>
       </form>
       <section class="stack library">
+        <label>评审名<input id="single-rater" maxlength="48" autocomplete="off" placeholder="填写固定的名字"></label>
         <h2>我的生成记录</h2>
         <p class="muted" id="run-count"></p>
         <ul id="run-list"></ul>
@@ -45,7 +46,7 @@
       </section>
     </aside>
     <section class="panel card" aria-label="当前照片">
-      <div id="single-empty" class="empty"><h2>选择一张照片开始</h2><p>生成后在这里试听各套编配，原图和调用记录会保存到当前浏览器。</p></div>
+      <div id="single-empty" class="empty"><h2>选择一张照片开始</h2><p>生成后可试听和评分，也可以为同一张照片生成更多编配。</p></div>
       <div id="single-detail" class="stack" hidden></div>
     </section>
   </section>
@@ -71,6 +72,6 @@
     </section>
   </section>
 </main>
-<script type="module" src="app.js?v=4"></script>
+<script type="module" src="app.js?v=5"></script>
 </body>
 </html>

@@ -129,9 +129,9 @@ export async function exportRuns(runs) {
       const folder = 'photos/' + run.id + '/'
       index.push(run.id)
       const {id, name, mimeType, photoSha256, count, phase, createdAt, renderVersion, soundfontSha256, model, endpoint,
-        error, attempt} = run
+        error, attempt, rootPhotoId, parentRunId, round} = run
       yield [folder + 'state.json', makeJson(sanitize({id, name, mimeType, photoSha256, count, phase, createdAt,
-        renderVersion, soundfontSha256, model, endpoint, error, attempt})), true]
+        renderVersion, soundfontSha256, model, endpoint, error, attempt, rootPhotoId, parentRunId, round})), true]
       yield [folder + 'photo', run.photo, false]
       if (run.intent) yield [folder + 'intent.json', makeJson(run.intent), true]
       if (run.score) yield [folder + 'arrangements.json', makeJson(run.score), true]
@@ -251,7 +251,7 @@ export async function exportRatings(packId, ratings, total) {
   const metadata = {format:resultsFormat, schemaVersion:1, packId,
     exportedAt:now(), totalPhotos:total, ratedPhotos:rated, diagnostics:diagnosticsManifest}
   const {events, writeFailures} = await readDiagnostics()
-  const inScope = event => packId ? event.packId === packId : event.scope === 'merge'
+  const inScope = event => packId ? event.packId === packId : event.scope === 'merge' || event.scope === 'mine'
   const operations = new Set(events.filter(inScope).map(event => event.operationId).filter(Boolean))
   const rows = events.filter(event => inScope(event) || operations.has(event.operationId))
   async function* entries() {

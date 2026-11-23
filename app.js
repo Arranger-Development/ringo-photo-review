@@ -1,9 +1,9 @@
 import {dimensions, makeRating} from './library.js'
-import {defaultEndpoint, defaultModel, endpointFrom, generate} from './qwen.js?v=4'
+import {defaultEndpoint, defaultModel, endpointFrom, generate} from './qwen.js?v=5'
 import {duration, hash, id, now, renderVersion, validatePhoto} from './score.js'
 import {getAudio, renderJob} from './renderer.js?v=3'
 import {all, allKeys, get, photoKey, put} from './storage.js?v=2'
-import {exportRatings, exportRuns, importDeck, mergeResults, ratingKey, saveFile, saveRating} from './packages.js?v=2'
+import {exportRatings, exportRuns, importDeck, mergeResults, ratingKey, saveFile, saveRating} from './packages.js?v=3'
 import {failure, importAuditFiles, recordEvent, redactText, startTrace} from './diagnostics.js?v=1'
 
 const element = id => document.getElementById(id)
@@ -12,7 +12,9 @@ const phaseNames = {queued:'待生成', intent:'千问读图', arrange:'千问�
 const runs = new Map()
 const decks = new Map()
 const active = new Set()
+const ownRatingScope = 'mine'
 let selectedRun
+let startingRun = false
 let currentDeck
 let deckPhotos = []
 let deckRatings = []
@@ -101,14 +103,26 @@ function orderedRuns() {
   return [...runs.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
+const roundLabel = job => '第 ' + job.round + ' 轮'
+const runTitle = job => job.round ? job.name + ' · ' + roundLabel(job) : job.name
+const rootOf = job => job.rootPhotoId ?? job.id
+
+function updateGenerationControls() {
+  const busy = startingRun || active.size > 0
+  element('generate-button').disabled = busy
+  const more = element('generate-more')
+  if (more) more.disabled = busy
+}
+
 function renderRunList() {
   const list = orderedRuns()
   element('run-count').textContent = list.length ? list.length + ' 条记录' : '暂无记录'
   element('export-runs').disabled = (!list.length && !hasArchiveLogs) || active.size > 0
   element('run-list').replaceChildren(...list.map(job => {
-    const row = node('button', undefined, {type:'button', title:job.name})
+    const row = node('button', undefined, {type:'button', title:runTitle(job)})
     row.toggleAttribute('aria-current', job.id === selectedRun)
-    row.append(node('span', job.name), node('span', phaseNames[job.phase] ?? job.phase))
+    const phase = phaseNames[job.phase] ?? job.phase
+    row.append(node('span', job.name), node('span', job.round ? roundLabel(job) + ' · ' + phase : phase))
     row.addEventListener('click', () => {
       selectedRun = job.id
       renderRunList()
@@ -163,7 +177,11 @@ async function renderSingle() {
   const epoch = ++singleRenderEpoch
   const job = runs.get(selectedRun)
   const target = element('single-detail')
-  const audio = job?.listening ? await getAudio(job) : undefined
+  const rater = reviewer()
+  const [audio, previous] = job?.phase === 'ready' ? await Promise.all([
+    getAudio(job),
+    get('ratings', ratingKey(ownRatingScope, {photoId:job.id, raterId:rater}))
+  ]) : []
   if (epoch !== singleRenderEpoch) return
   target.hidden = !job
   element('single-empty').hidden = Boolean(job)
@@ -172,23 +190,22 @@ async function renderSingle() {
   cleanup(singleURLs)
   target.replaceChildren()
   if (!job) return
-  target.append(node('h2', job.name), photoView(job, singleURLs))
+  target.append(node('h2', runTitle(job)), photoView(job, singleURLs))
   const phase = node('p', job.error ?? (phaseNames[job.phase] ?? job.phase), {className:'status'})
   phase.setAttribute('role', 'status')
   phase.classList.toggle('error', Boolean(job.error))
   target.append(phase)
   if (job.intent) target.append(node('p', job.intent.summary, {className:'muted'}))
-  if (audio) {
-    const players = node('div', undefined, {className:'players'})
-    for (const candidate of job.listening) {
-      const track = audio.find(item => item.id === candidate.id)
-      const view = node('div', undefined, {className:'player'})
-      view.append(node('strong', candidate.label), play(candidate, track.audio, singleURLs, job))
-      players.append(view)
-    }
-    target.append(players)
+  if (audio) target.append(scoresForm(job, audio, {
+    rater, previous, scope:ownRatingScope, urls:singleURLs, onSaved:updateMerged
+  }))
+  if (job.score && job.intent && (job.phase === 'ready' || job.phase === 'failed')) {
+    const more = node('button', '生成更多', {id:'generate-more', type:'button'})
+    more.addEventListener('click', () => void generateMore(job))
+    target.append(more)
+    updateGenerationControls()
   }
-  if (!active.has(job.id) && job.phase !== 'ready') {
+  if (job.phase === 'failed' && !active.has(job.id)) {
     const retry = node('button', '继续 / 重试', {type:'button'})
     retry.addEventListener('click', () => void processSingle(job, undefined, true))
     target.append(retry)
@@ -230,10 +247,11 @@ async function runSingle(job, supplied, isRetry) {
   if (active.has(job.id)) return
   active.add(job.id)
   const trace = startTrace('browser', isRetry ? 'retry' : 'generation', {
-    photoId:job.id, attempt:job.score ? job.attempt : job.attempt + 1, previousPhase:job.phase
+    photoId:job.id, rootPhotoId:rootOf(job), parentRunId:job.parentRunId, round:job.round ?? 1,
+    attempt:job.score ? job.attempt : job.attempt + 1, previousPhase:job.phase
   })
   status('single-status', '')
-  element('generate-button').disabled = true
+  updateGenerationControls()
   try {
     if (!job.score) await generate(job, supplied ?? config(), changed)
     job.phase = 'rendering'
@@ -265,7 +283,7 @@ async function runSingle(job, supplied, isRetry) {
     status('single-status', job.error, true)
   } finally {
     active.delete(job.id)
-    element('generate-button').disabled = active.size > 0
+    updateGenerationControls()
     try { await put('runs', job.id, job) } catch (error) {
       void recordEvent('browser', 'generation_save', 'failed', {photoId:job.id, attempt:job.attempt,
         ...diagnosticFailure(error, 'storage_write_failed')})
@@ -290,8 +308,9 @@ async function processSingle(job, supplied, isRetry = false) {
 
 element('generate').addEventListener('submit', async event => {
   event.preventDefault()
-  if (active.size) return
-  element('generate-button').disabled = true
+  if (startingRun || active.size) return
+  startingRun = true
+  updateGenerationControls()
   const photo = element('photo-input').files[0]
   const photoId = id()
   const trace = startTrace('browser', 'photo_select', {photoId, mimeType:photo?.type, imageBytes:photo?.size})
@@ -302,7 +321,8 @@ element('generate').addEventListener('submit', async event => {
     await validatePhoto(photo)
     const job = {
       id:photoId, name:photo.name.slice(0, 255), photo, mimeType:photo.type, photoSha256:await hash(photo), createdAt:now(),
-      count:Number(element('count').value), renderVersion, attempt:0, calls:[], events:[], phase:'queued'
+      rootPhotoId:photoId, round:1, count:Number(element('count').value),
+      renderVersion, attempt:0, calls:[], events:[], phase:'queued'
     }
     await put('runs', job.id, job)
     await trace.finish('succeeded', {photoSha256:job.photoSha256, candidateCount:job.count})
@@ -314,8 +334,55 @@ element('generate').addEventListener('submit', async event => {
     await trace.finish('failed', diagnosticFailure(error, 'photo_selection_failed'))
     status('single-status', error.message, true)
     renderRunList()
-  } finally { element('generate-button').disabled = active.size > 0 }
+  } finally {
+    startingRun = false
+    updateGenerationControls()
+  }
 })
+
+async function generateMore(source) {
+  if (startingRun || active.size) return
+  startingRun = true
+  updateGenerationControls()
+  const rootPhotoId = rootOf(source)
+  const trace = startTrace('browser', 'generate_more', {rootPhotoId, parentRunId:source.id})
+  try {
+    const supplied = config()
+    const count = Number(element('count').value)
+    const addRound = async () => {
+      const related = (await all('runs')).filter(job => rootOf(job) === rootPhotoId)
+        .sort((a, b) => (b.round ?? 1) - (a.round ?? 1))
+      const pastCandidates = related.filter(job => job.score).slice(0, 3)
+        .flatMap(job => job.score.candidates)
+      const {name, photo, mimeType, photoSha256, intent} = source
+      const job = {
+        id:id(), rootPhotoId, parentRunId:source.id, round:(related[0]?.round ?? 1) + 1,
+        name, photo, mimeType, photoSha256, intent, count, createdAt:now(), renderVersion,
+        previousDirections:pastCandidates.map(candidate => ({
+          direction:candidate.direction,
+          timbres:candidate.tracks.map(track => track.timbreId)
+        })),
+        attempt:0, calls:[], events:[], phase:'queued'
+      }
+      await put('runs', job.id, job)
+      return job
+    }
+    const job = navigator.locks
+      ? await navigator.locks.request('ringo-photo-round-' + rootPhotoId, addRound)
+      : await addRound()
+    await trace.finish('succeeded', {photoId:job.id, round:job.round, candidateCount:count})
+    selectedRun = job.id
+    changed(job)
+    await processSingle(job, supplied)
+  } catch (error) {
+    const details = diagnosticFailure(error, 'generate_more_failed')
+    await trace.finish('failed', details)
+    status('single-status', details.error, true)
+  } finally {
+    startingRun = false
+    updateGenerationControls()
+  }
+}
 
 async function withDownload(button, where, create, name, context) {
   const trace = startTrace('browser', 'zip_export', context)
@@ -362,6 +429,7 @@ element('import-results').addEventListener('change', async event => {
     const {added, skipped, sourcePackId} = await mergeResults(file, orderedRuns())
     await trace.finish('succeeded', {added, skipped, sourcePackId})
     status('single-status', '合并 ' + added + ' 条评分 · 跳过 ' + skipped + ' 条已有、较旧或不匹配的评分。')
+    if (added) await renderSingle()
     await updateMerged()
   } catch (error) {
     await trace.finish('failed', diagnosticFailure(error, 'rating_merge_failed'))
@@ -380,6 +448,9 @@ element('export-merged').addEventListener('click', event => {
 })
 
 const reviewer = () => element('rater').value.trim()
+function setReviewer(value) {
+  element('rater').value = element('single-rater').value = value
+}
 const isRated = job => deckRatings.some(record => record.photoId === job.id && record.raterId === reviewer())
 const currentRatings = () => deckRatings.filter(record => record.raterId === reviewer())
 function deckProgress() {
@@ -395,7 +466,7 @@ function deckProgress() {
   element('export-ratings').disabled = !currentRatings().length
   const jump = element('jump')
   jump.replaceChildren(...deckPhotos.map((job, index) => node('option',
-    (index + 1) + ' · ' + job.name + (isRated(job) ? '（已评）' : '（' + (phaseNames[job.phase] ?? job.phase) + '）'),
+    (index + 1) + ' · ' + runTitle(job) + (isRated(job) ? '（已评）' : '（' + (phaseNames[job.phase] ?? job.phase) + '）'),
     {value:String(index), selected:index === currentDeck.selected})))
 }
 
@@ -410,9 +481,7 @@ async function selectCard(index, focus = true) {
   if (focus) element('card-title')?.focus()
 }
 
-function scoresForm(job, audio, deck) {
-  const rater = reviewer()
-  const previous = deckRatings.find(record => record.photoId === job.id && record.raterId === rater)
+function scoresForm(job, audio, {rater, previous, scope, packId, urls, onSaved, advance}) {
   const form = node('form')
   const cards = node('div', undefined, {className:'players'})
   const inputs = new Map()
@@ -421,7 +490,7 @@ function scoresForm(job, audio, deck) {
   for (const candidate of job.listening) {
     const track = audio.find(item => item.id === candidate.id)
     const card = node('fieldset', undefined, {className:'player'})
-    card.append(node('legend', candidate.label), play(candidate, track.audio, deckURLs, job, deck.id))
+    card.append(node('legend', candidate.label), play(candidate, track.audio, urls, job, packId))
     const row = node('div', undefined, {className:'dimensions'})
     const points = {}
     for (const [key, label] of Object.entries(dimensions)) {
@@ -454,18 +523,22 @@ function scoresForm(job, audio, deck) {
   const noneLabel = labelControl('都不合适', none)
   noneLabel.className = 'check'
   const actions = node('div', undefined, {className:'deck-actions'})
-  const save = node('button', '保存评分', {type:'submit'})
-  const next = node('button', deck.selected === deckPhotos.length - 1 ? '保存并完成' : '保存并下一张',
-    {type:'submit', className:'primary'})
+  const save = node('button', '保存评分', {type:'submit', className:advance ? '' : 'primary'})
+  const next = advance && node('button', advance.label, {type:'submit', className:'primary'})
   const message = node('p', previous ? '已保存，可修改。' : '', {className:'status'})
   message.setAttribute('role', 'status')
-  actions.append(save, next)
+  actions.append(save)
+  if (next) actions.append(next)
+  const setSaving = disabled => {
+    save.disabled = disabled
+    if (next) next.disabled = disabled
+  }
   form.append(rubric, cards, noneLabel, labelControl('备注', note), actions, message)
   form.addEventListener('submit', async event => {
     event.preventDefault()
-    save.disabled = next.disabled = true
+    setSaving(true)
     message.classList.remove('error')
-    const trace = startTrace('browser', 'rating_save', {packId:deck.id, photoId:job.id,
+    const trace = startTrace('browser', 'rating_save', {packId, photoId:job.id, scope,
       candidateCount:job.listening.length})
     try {
       if (!rater) throw new Error('请先填写评审名。')
@@ -479,24 +552,17 @@ function scoresForm(job, audio, deck) {
       }
       const record = makeRating({...job, candidates:job.listening}, rater,
         {scores, favorites, usable, none:none.checked, note:redactText(note.value, currentKey())})
-      await saveRating(deck.id, record)
+      await saveRating(scope, record)
       await trace.finish('succeeded')
-      if (deck !== currentDeck) return
-      const key = ratingKey(deck.id, record)
-      deckRatings = deckRatings.filter(item => ratingKey(deck.id, item) !== key).concat({...record, scope:deck.id})
       message.textContent = '评分已保存。'
-      deckProgress()
-      if (event.submitter === next && deck.photos[deck.selected] === job.id) {
-        if (deck.selected + 1 < deck.photos.length) await selectCard(deck.selected + 1)
-        else status('review-status', currentRatings().length === deck.photos.length
-          ? '这份编配包已全部评完，可以下载结果 ZIP。' : '已到最后一张，可从进度选择尚未评的照片。')
-      }
+      await onSaved(record)
+      if (next && event.submitter === next) await advance.run()
     } catch (error) {
       await trace.finish('failed', diagnosticFailure(error, 'rating_save_failed'))
       message.textContent = error.message
       message.classList.add('error')
     }
-    finally { save.disabled = next.disabled = false }
+    finally { setSaving(false) }
   })
   return form
 }
@@ -513,7 +579,7 @@ async function renderCard() {
   cleanup(deckURLs)
   target.replaceChildren()
   if (!job) return
-  const heading = node('h3', job.name, {id:'card-title', tabIndex:-1})
+  const heading = node('h3', runTitle(job), {id:'card-title', tabIndex:-1})
   const row = node('div', undefined, {className:'control-row'})
   const position = node('p', '第 ' + (deck.selected + 1) + ' / ' + deck.photos.length + ' 张', {className:'muted'})
   const actions = node('div', undefined, {className:'deck-actions'})
@@ -525,8 +591,28 @@ async function renderCard() {
   }
   row.append(position, actions)
   target.append(row, heading, photoView(job, deckURLs))
-  if (audio) target.append(scoresForm(job, audio, deck))
-  else {
+  if (audio) {
+    const rater = reviewer()
+    target.append(scoresForm(job, audio, {
+      rater, previous:deckRatings.find(record => record.photoId === job.id && record.raterId === rater),
+      scope:deck.id, packId:deck.id, urls:deckURLs,
+      onSaved:record => {
+        if (deck !== currentDeck) return
+        const key = ratingKey(deck.id, record)
+        deckRatings = deckRatings.filter(item => ratingKey(deck.id, item) !== key).concat({...record, scope:deck.id})
+        deckProgress()
+      },
+      advance:{
+        label:deck.selected === deck.photos.length - 1 ? '保存并完成' : '保存并下一张',
+        run:async () => {
+          if (deck !== currentDeck || deck.photos[deck.selected] !== job.id || rater !== reviewer()) return
+          if (deck.selected + 1 < deck.photos.length) await selectCard(deck.selected + 1)
+          else status('review-status', currentRatings().length === deck.photos.length
+            ? '这份编配包已全部评完，可以下载结果 ZIP。' : '已到最后一张，可从进度选择尚未评的照片。')
+        }
+      }
+    }))
+  } else {
     const text = job.phase === 'failed' ? job.error : '试听在合成队列中，准备好后会出现在这里。'
     target.append(node('p', text, {className:job.phase === 'failed' ? 'error' : 'muted'}))
     if (job.phase === 'failed') {
@@ -638,11 +724,14 @@ element('deck-select').addEventListener('change', event => {
   void openDeck(decks.get(event.currentTarget.value)).catch(error => status('review-status', error.message, true))
 })
 element('jump').addEventListener('change', event => void selectCard(Number(event.currentTarget.value)))
-element('rater').addEventListener('change', async () => {
-  await put('settings', 'rater', reviewer())
-  deckProgress()
-  await renderCard()
-})
+for (const field of ['rater', 'single-rater']) {
+  element(field).addEventListener('change', async event => {
+    const value = event.currentTarget.value.trim()
+    setReviewer(value)
+    deckProgress()
+    await Promise.all([put('settings', 'rater', value), renderSingle(), renderCard()])
+  })
+}
 element('retry-renders').addEventListener('click', () => {
   for (const job of deckPhotos) {
     if (job.phase !== 'failed') continue
@@ -686,11 +775,11 @@ async function restoreRun(run) {
 async function restore() {
   hasArchiveLogs ||= (await allKeys('audits')).length > 0 || (await allKeys('diagnostics')).length > 0
   for (const run of await all('runs')) runs.set(run.id, await restoreRun(run))
+  setReviewer(await get('settings', 'rater') ?? '')
   selectedRun = orderedRuns()[0]?.id
   renderRunList()
   await renderSingle()
   await updateMerged()
-  element('rater').value = await get('settings', 'rater') ?? ''
   for (const deck of await all('decks')) decks.set(deck.id, deck)
   deckOptions()
   const recent = decks.get(await get('settings', 'deck'))

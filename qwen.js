@@ -219,7 +219,10 @@ export async function generate(job, config, changed) {
         .map(({id, name, drumMidiRanges}) => [id, name, drumMidiRanges])
     }
     const prompt = specs.scorePrompt +
-      '\n本次 API 使用紧凑事件格式。events 中的每个音符都是四个整数的数组 [startTick, durationTicks, midi, velocity]，按此顺序输出。'
+      '\n本次 API 使用紧凑事件格式。events 中的每个音符都是四个整数的数组 [startTick, durationTicks, midi, velocity]，按此顺序输出。' +
+      (job.previousDirections?.length
+        ? '\n这是同一张照片的追加轮次。previousDirections 列出近期方案和音色。贴合原音乐意图，探索新的配器组合、织体和节奏，避免重复这些搭配。'
+        : '')
     for (let pass = 0; pass < 2 && !job.score; pass++) {
       const partial = job.partial
       const repair = partial?.issues ?? []
@@ -227,6 +230,7 @@ export async function generate(job, config, changed) {
       const replacing = repair.length > 0 && repair.length < job.count
       const count = replacing ? repair.length : job.count
       const context = {photoIntent:job.intent, timbreCatalog, candidateCount:count}
+      if (job.previousDirections?.length) context.previousDirections = job.previousDirections
       if (replacing) {
         context.repairIssues = repair.map(({index, message}) => ({
           position:index + 1, message, candidate:partial.score.candidates[index]
