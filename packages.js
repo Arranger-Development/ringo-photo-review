@@ -3,7 +3,8 @@ import {openZip} from './zip.js'
 import {loadLibrary, mergeRating} from './library.js'
 import {hash, hashPattern, id, loadSpecs, mimeTypes, now, photoIdPattern, photoLimit,
   renderVersion, scoreIssues, validListening, validatePhoto} from './score.js'
-import {all, audioKey, get, photoKey, put} from './storage.js'
+import {all, audioKey, get, photoKey, put} from './storage.js?v=2'
+import {logSchemaVersion, readDiagnostics, redactResponse, requestId, requestLinks, sanitize} from './diagnostics.js?v=1'
 
 const partLimit = 8 * 1024 * 1024
 const bundleLimit = 0xffffffff
@@ -43,34 +44,119 @@ export function saveFile(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 60000)
 }
 
+const jsonLines = rows => new Blob(rows.map(row => JSON.stringify(row) + '\n'), {type:'application/x-ndjson'})
+const logIndexPath = 'logs/index.json'
+const diagnosticsManifest = {schemaVersion:logSchemaVersion, indexPath:logIndexPath}
+
+function errorCodeFor(call) {
+  if (call.errorCode) return call.errorCode
+  if (call.outcome === 'interrupted') return 'page_interrupted'
+  if (call.outcome === 'rejected') return 'validation_rejected'
+  if (call.errorType === 'TimeoutError') return 'request_timeout'
+  if (call.errorType === 'TypeError' && !call.responseComplete) return 'network_error'
+  if (call.httpStatus >= 400) return 'http_error'
+  if (call.outcome === 'failed') return 'request_failed'
+}
+
+function callLogs(run, call, audits) {
+  const {rawResponse, requestSnapshot, ...fields} = call
+  const files = []
+  const log = sanitize({...fields, eventId:'qwen:' + call.id, schemaVersion:logSchemaVersion,
+    kind:'qwen_request', category:'qwen', stage:call.phase, photoId:run.id, callId:call.id,
+    at:call.requestAt, errorCode:errorCodeFor(call) ?? null, photoPath:'photos/' + run.id + '/photo'})
+  if (requestSnapshot) {
+    log.requestPath = 'logs/qwen/requests/' + call.id + '.json'
+    files.push([log.requestPath,makeJson(sanitize(requestSnapshot)),true,1])
+  }
+  if (rawResponse !== undefined) {
+    const raw = redactResponse(rawResponse)
+    let extension = 'txt'
+    try { JSON.parse(raw); extension = 'json' } catch { /* Preserve partial and non-JSON responses as text. */ }
+    log.rawResponsePath = 'logs/qwen/responses/' + call.id + '.' + extension
+    files.push([log.rawResponsePath,new Blob([raw]),true,1])
+  }
+  const providerId = requestId(log.providerRequestId)
+  if (providerId) log.auditEventId = audits.get(providerId)?.eventId ?? null
+  return {log, files}
+}
+
+async function* archiveLogs({kind, packId, rows, audits = [], links = new Map(), rawCalls = [], files = [], writeFailures}) {
+  const index = {schemaVersion:logSchemaVersion, exportedAt:now(), kind, packId, writeFailures, files:[],
+    bailian:{matched:0, unmatched:0, requestsWithoutId:rawCalls.filter(call => !requestId(call.providerRequestId)).length,
+      requestsWithoutAudit:rawCalls.filter(call => requestId(call.providerRequestId) && !call.auditEventId).length}}
+  const items = [...files]
+  const eventRows = rows.filter(row => row.category !== 'render')
+  const renderRows = rows.filter(row => row.category === 'render')
+  const byTime = (a, b) => (a.at ?? '').localeCompare(b.at ?? '') || a.eventId.localeCompare(b.eventId)
+  const auditRows = []
+  for (const {raw = [], ...row} of audits) {
+    const calls = links.get(row.providerRequestId) ?? []
+    const match = calls.length ? 'matched' : 'unmatched'
+    index.bailian[match]++
+    const rawPaths = []
+    for (const evidence of raw) {
+      const path = 'logs/bailian/raw/' + evidence.sha256 + '.json'
+      rawPaths.push(path)
+      items.push([path,makeJson(evidence.value),true,1])
+    }
+    auditRows.push({...row, match, calls, rawPaths})
+  }
+  for (const [name, list] of [
+    ['logs/browser/events.jsonl', eventRows], ['logs/render/events.jsonl', renderRows],
+    ['logs/qwen/calls.jsonl', rawCalls], ['logs/bailian/audit.jsonl', auditRows]
+  ]) items.push([name,jsonLines(list.sort(byTime)),true,list.length])
+  const added = new Set()
+  for (const [path, blob, compress, count] of items) {
+    if (added.has(path)) continue
+    added.add(path)
+    index.files.push({path, count})
+    yield [path, blob, compress]
+  }
+  yield [logIndexPath, makeJson(index), true]
+}
+
 export async function exportRuns(runs) {
   const packId = id()
+  const {events, writeFailures} = await readDiagnostics()
+  const audits = await all('audits')
+  const byRequest = new Map(audits.filter(row => row.providerRequestId).map(row => [row.providerRequestId, row]))
   async function* entries() {
     const index = []
+    const rawCalls = []
+    const files = []
+    const rows = events.filter(event => !event.packId)
     for (const run of runs) {
       const folder = 'photos/' + run.id + '/'
       index.push(run.id)
       const {id, name, mimeType, photoSha256, count, phase, createdAt, renderVersion, soundfontSha256, model, endpoint,
         error, attempt} = run
-      yield [folder + 'state.json', makeJson({id, name, mimeType, photoSha256, count, phase, createdAt,
-        renderVersion, soundfontSha256, model, endpoint, error, attempt}), true]
+      yield [folder + 'state.json', makeJson(sanitize({id, name, mimeType, photoSha256, count, phase, createdAt,
+        renderVersion, soundfontSha256, model, endpoint, error, attempt})), true]
       yield [folder + 'photo', run.photo, false]
       if (run.intent) yield [folder + 'intent.json', makeJson(run.intent), true]
       if (run.score) yield [folder + 'arrangements.json', makeJson(run.score), true]
       if (run.listening) yield [folder + 'listen.json', makeJson(run.listening), true]
       if (run.partial) yield [folder + 'partial.json', makeJson(run.partial), true]
-      const events = []
-      for (const {rawResponse, ...call} of run.calls) {
-        if (rawResponse !== undefined) {
-          call.rawResponsePath = folder + 'qwen/' + call.id + '.json'
-          yield [call.rawResponsePath, new Blob([rawResponse]), true]
-        }
-        events.push({photoId:id, kind:'qwen_request', ...call})
+      const legacy = []
+      for (const call of run.calls ?? []) {
+        const exported = callLogs(run, call, byRequest)
+        legacy.push(exported.log)
+        rawCalls.push(exported.log)
+        files.push(...exported.files)
       }
-      events.push(...(run.events ?? []).map(event => ({photoId:id, ...event})))
-      yield [folder + 'events.jsonl', new Blob(events.map(event => JSON.stringify(event) + '\n')), true]
+      for (const [position, event] of (run.events ?? []).entries()) {
+        const row = sanitize({...event, photoId:id, eventId:'render:' + id + ':' + (event.startedAt ?? position),
+          schemaVersion:logSchemaVersion, category:'render', stage:'render', at:event.endedAt ?? event.startedAt,
+          errorCode:event.outcome === 'failed' ? 'render_failed' : undefined})
+        legacy.push(row)
+        if (!event.telemetry) rows.push(row)
+      }
+      yield [folder + 'events.jsonl', jsonLines(legacy), true]
     }
-    yield ['ringo.json', makeJson({format:compatibility, schemaVersion:1, packId, exportedAt:now(), photos:index}), true]
+    yield* archiveLogs({kind:compatibility, packId, rows, audits, links:requestLinks(runs),
+      rawCalls, files, writeFailures})
+    yield ['ringo.json', makeJson({format:compatibility, schemaVersion:1, packId, exportedAt:now(),
+      photos:index, diagnostics:diagnosticsManifest}), true]
   }
   return archive(entries())
 }
@@ -163,9 +249,17 @@ export const saveRating = (scope, record) => put('ratings', ratingKey(scope, rec
 export async function exportRatings(packId, ratings, total) {
   const {length:rated} = ratings
   const metadata = {format:resultsFormat, schemaVersion:1, packId,
-    exportedAt:now(), totalPhotos:total, ratedPhotos:rated}
-  const text = ratings.map(({scope, ...record}) => JSON.stringify(record) + '\n')
-  return archive([['ringo.json', makeJson(metadata), true], ['ratings.jsonl', new Blob(text), true]])
+    exportedAt:now(), totalPhotos:total, ratedPhotos:rated, diagnostics:diagnosticsManifest}
+  const {events, writeFailures} = await readDiagnostics()
+  const inScope = event => packId ? event.packId === packId : event.scope === 'merge'
+  const operations = new Set(events.filter(inScope).map(event => event.operationId).filter(Boolean))
+  const rows = events.filter(event => inScope(event) || operations.has(event.operationId))
+  async function* entries() {
+    yield ['ringo.json', makeJson(metadata), true]
+    yield ['ratings.jsonl', jsonLines(ratings.map(({scope, ...record}) => sanitize(record))), true]
+    yield* archiveLogs({kind:resultsFormat, packId, rows, writeFailures})
+  }
+  return archive(entries())
 }
 
 async function mergeResultRecords(file, runs) {
@@ -193,7 +287,7 @@ async function mergeResultRecords(file, runs) {
     await saveRating('mine', record)
     added++
   }
-  return {added, skipped}
+  return {added, skipped, sourcePackId:manifest.packId}
 }
 
 export function mergeResults(file, runs) {

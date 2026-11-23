@@ -1,6 +1,7 @@
 import {duration, hash, id, loadSpecs, makeListening, normalizeModelScore, noteFields, now,
   scoreIssues, validateIntent} from './score.js'
-import {put} from './storage.js'
+import {put} from './storage.js?v=2'
+import {diagnosticsAppVersion, redactResponse, redactText, sanitize} from './diagnostics.js?v=1'
 
 export const defaultEndpoint = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
 export const defaultModel = 'qwen3.8-flash'
@@ -24,16 +25,25 @@ function imageData(blob) {
 }
 
 async function fetchReply(config, phase, prompt, schema, content, job, changed, extra = {}) {
-  const body = JSON.stringify({
+  const payload = {
     model: config.model,
     messages: [{role:'system', content:prompt}, {role:'user', content}],
     enable_thinking:false,
     stream:false,
     response_format:{type:'json_schema', json_schema:{name:phase === 'intent'
       ? 'photo_music_intent' : 'photo_arrangements_compact', strict:true, schema}}
-  })
+  }
+  const body = JSON.stringify(payload)
+  const {messages, ...configuration} = payload
+  const safeMessages = messages.map(message => ({
+    ...message,
+    content:Array.isArray(message.content) ? message.content.map(part => part.type === 'image_url'
+      ? {...part, image_url:{path:'photos/' + job.id + '/photo', mimeType:job.mimeType}} : part)
+      : message.content
+  }))
   const call = {
-    id:id(), phase, attempt: job.attempt, provider:'dashscope', endpoint:config.endpoint, requestedModel:config.model,
+    id:id(), appVersion:diagnosticsAppVersion, requestSnapshot:sanitize({...configuration, messages:safeMessages}, config.key),
+    phase, attempt: job.attempt, provider:'dashscope', endpoint:config.endpoint, requestedModel:config.model,
     promptSha256:await hash(prompt), schemaSha256:await hash(JSON.stringify(schema)),
     requestBytes:new Blob([body]).size, timeoutMs:240000, stream:false, thinking:false, outcome:'pending', ...extra
   }
@@ -47,6 +57,7 @@ async function fetchReply(config, phase, prompt, schema, content, job, changed, 
   let raw = ''
   let responseBytes = 0
   let checkpoint = Promise.resolve()
+  let lastPreview = 0
   const saveProgress = () => {
     const snapshot = structuredClone(job)
     checkpoint = checkpoint.then(() => put('runs', job.id, snapshot)).catch(() => {})
@@ -63,6 +74,8 @@ async function fetchReply(config, phase, prompt, schema, content, job, changed, 
     call.exposedHeaders = Object.fromEntries(
       ['x-request-id', 'x-dashscope-request-id', 'retry-after', 'req-cost-time', 'x-envoy-upstream-service-time']
         .map(name => [name, response.headers.get(name)]).filter(([, value]) => value !== null))
+    call.responseContentType = response.headers.get('content-type')
+    call.providerRequestId = call.exposedHeaders['x-request-id'] ?? call.exposedHeaders['x-dashscope-request-id']
     saveProgress()
     if (response.body) {
       const reader = response.body.getReader()
@@ -70,18 +83,26 @@ async function fetchReply(config, phase, prompt, schema, content, job, changed, 
         while (true) {
           const {value, done} = await reader.read()
           if (done) break
-          if (call.firstByteMs === undefined && value.byteLength) {
+          const first = call.firstByteMs === undefined && value.byteLength
+          if (first) {
             call.firstByteAt = now()
             call.firstByteMs = duration(begin)
-            call.responseBytes = value.byteLength
-            saveProgress()
           }
+          const available = Math.max(0, 8 * 1024 * 1024 - responseBytes)
           responseBytes += value.byteLength
+          raw += decoder.decode(value.subarray(0, available), {stream:true})
           if (responseBytes > 8 * 1024 * 1024) {
+            call.responseTruncated = true
+            call.errorCode = 'response_size_limit'
             await reader.cancel()
             throw new Error('千问回包超出 8 MB。')
           }
-          raw += decoder.decode(value, {stream:true})
+          if (first || performance.now() - lastPreview > 2000) {
+            call.responseBytes = responseBytes
+            if (raw) call.rawResponse = redactResponse(raw, config.key)
+            lastPreview = performance.now()
+            saveProgress()
+          }
         }
         raw += decoder.decode()
       } finally { reader.releaseLock() }
@@ -91,11 +112,13 @@ async function fetchReply(config, phase, prompt, schema, content, job, changed, 
     call.upstreamMs = duration(begin)
     const parsedAt = performance.now()
     let envelope
-    try { envelope = JSON.parse(raw.split(config.key).join('[密钥]')) }
+    try { envelope = sanitize(JSON.parse(raw), config.key) }
     catch (error) { if (response.ok) throw error }
     call.parseMs = duration(parsedAt)
     call.providerRequestId = call.exposedHeaders['x-request-id'] ?? call.exposedHeaders['x-dashscope-request-id'] ?? envelope?.request_id
     if (!response.ok) {
+      call.errorCode = 'http_error'
+      call.failureStage = 'http_status'
       call.providerErrorCode = envelope?.code ?? envelope?.error?.code ?? null
       throw new Error('百炼返回 HTTP ' + response.status + (call.providerErrorCode ? ' · ' + call.providerErrorCode : ''))
     }
@@ -107,30 +130,34 @@ async function fetchReply(config, phase, prompt, schema, content, job, changed, 
     call.finishReason = choice?.finish_reason ?? null
     if (call.finishReason !== 'stop') throw new Error('千问未完整返回结果' + (call.finishReason ? ' · ' + call.finishReason : '。'))
     const contentParsedAt = performance.now()
-    const result = JSON.parse(choice.message.content)
+    const result = sanitize(JSON.parse(choice.message.content), config.key)
     call.parseMs += duration(contentParsedAt)
     call.outcome = 'received'
     return {result, call}
   } catch (error) {
     call.outcome = 'failed'
     call.errorType = error.name
-    call.error = error.message.split(config.key).join('[密钥]')
+    call.error = redactText(error.message, config.key)
     if (error.name === 'TimeoutError') {
+      call.errorCode = 'request_timeout'
       call.failureStage = call.headersAt ? 'response_body' : 'response_headers'
       call.error = '千问请求超过 240 秒，可从当前阶段重试。'
     } else if (error instanceof TypeError && !call.responseComplete) {
+      call.errorCode = 'network_error'
       call.browserError = call.error
       call.failureStage = call.headersAt ? 'response_body' : 'response_headers'
       call.error = call.headersAt
         ? '已收到 HTTP ' + call.httpStatus + '，但读取回包时连接断开。'
         : '等待约 ' + Math.round(duration(begin) / 1000) + ' 秒，浏览器未收到可读的百炼 HTTP 回包。请检查接入地址的网络和系统代理。'
     }
+    call.errorCode ??= 'invalid_response'
+    call.failureStage ??= call.responseComplete ? 'response_decode' : 'response_body'
     throw new Error(call.error)
   } finally {
     call.responseBytes = responseBytes
     call.requestEndedAt = now()
     call.upstreamMs ??= duration(begin)
-    if (raw) call.rawResponse = raw.split(config.key).join('[密钥]')
+    if (raw) call.rawResponse = redactResponse(raw, config.key)
     await checkpoint
     await save()
   }
@@ -174,6 +201,7 @@ export async function generate(job, config, changed) {
       call.outcome = 'accepted'
     } catch (error) {
       call.outcome = 'rejected'
+      call.errorCode = 'validation_rejected'
       call.validationError = error.message
       throw error
     } finally {
@@ -219,6 +247,7 @@ export async function generate(job, config, changed) {
         if (issues.length) {
           job.partial = {score:full, issues}
           call.outcome = 'rejected'
+          call.errorCode = 'validation_rejected'
           call.validationIssues = issues
           if (pass === 1 || issues.length === job.count)
             throw new Error(issues.map(({index, message}) => '第 ' + (index + 1) + ' 套 · ' + message).join('\n'))
@@ -230,6 +259,7 @@ export async function generate(job, config, changed) {
         }
       } catch (error) {
         call.outcome = 'rejected'
+        call.errorCode = 'validation_rejected'
         call.validationError = error.message
         throw error
       } finally {

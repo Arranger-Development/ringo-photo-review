@@ -38,6 +38,7 @@
         <p class="muted" id="run-count"></p>
         <ul id="run-list"></ul>
         <button type="button" id="export-runs" disabled>下载完整编配 ZIP</button>
+        <label class="file-action">导入百炼审计 JSON<input type="file" id="import-audit" accept=".json,application/json" multiple></label>
         <label class="file-action">导入听评结果 ZIP<input type="file" id="import-results" accept=".zip,application/zip"></label>
         <button type="button" id="export-merged" disabled>导出汇总评分 ZIP</button>
         <p role="status" id="single-status" class="status"></p>
@@ -70,6 +71,6 @@
     </section>
   </section>
 </main>
-<script type="module" src="app.js?v=3"></script>
+<script type="module" src="app.js?v=4"></script>
 </body>
 </html>

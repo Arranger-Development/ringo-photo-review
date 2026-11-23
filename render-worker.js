@@ -122,6 +122,22 @@ function measure(path, filters) {
   return {loudness, peak}
 }
 
+async function measured(stage, context, work) {
+  const startedAt = new Date().toISOString()
+  const begin = performance.now()
+  self.postMessage({trace:{...context, stage, outcome:'started', workerStartedAt:startedAt}})
+  const finish = (outcome, details) => self.postMessage({trace:{...context, ...details, stage, outcome,
+    workerStartedAt:startedAt, workerEndedAt:new Date().toISOString(), durationMs:performance.now() - begin}})
+  try {
+    const result = await work()
+    finish('succeeded')
+    return result
+  } catch (error) {
+    finish('failed', {errorCode:stage + '_failed', errorName:error.name, error:error.message})
+    throw error
+  }
+}
+
 async function render(score, listening, catalog, notify) {
   const timbres = new Map(catalog.map(timbre => [timbre.id, timbre]))
   const rendered = []
@@ -129,29 +145,36 @@ async function render(score, listening, catalog, notify) {
     for (const candidate of listening) {
       notify('合成 ' + candidate.label + ' · ' + (rendered.length + 1) + ' / ' + listening.length)
       const started = performance.now()
-      const {bytes, duration} = await wav(score.candidates[candidate.arrangementIndex], timbres)
-      const path = candidate.label + '.wav'
-      engine.FS.writeFile(path, bytes)
-      const filters = 'atrim=end=' + duration.toFixed(6) + ',afade=t=out:st=' + (duration - 0.15).toFixed(6) + ':d=0.15'
-      const {loudness, peak} = measure(path, filters + ',ebur128=peak=true')
-      rendered.push({path, candidate, duration, filters, loudness, peak, synthesisMs:performance.now() - started})
+      const step = await measured('candidate_synthesis', {candidateId:candidate.id, label:candidate.label}, async () => {
+        const {bytes, duration} = await wav(score.candidates[candidate.arrangementIndex], timbres)
+        const path = candidate.label + '.wav'
+        engine.FS.writeFile(path, bytes)
+        const filters = 'atrim=end=' + duration.toFixed(6) + ',afade=t=out:st=' + (duration - 0.15).toFixed(6) + ':d=0.15'
+        const {loudness, peak} = measure(path, filters + ',ebur128=peak=true')
+        return {path, candidate, duration, filters, loudness, peak, synthesisMs:performance.now() - started}
+      })
+      rendered.push(step)
     }
     const target = Math.min(-18, ...rendered.map(({loudness, peak}) => loudness - 2 - peak))
-    return rendered.map(({path, candidate, duration, filters, loudness, synthesisMs}, index) => {
-      notify('编码 ' + candidate.label + ' · ' + (index + 1) + ' / ' + listening.length)
-      const started = performance.now()
-      const mp3 = candidate.label + '.mp3'
-      ffmpeg('-loglevel', 'error', '-i', path, '-af', filters + ',volume=' + (target - loudness).toFixed(3) + 'dB',
-        '-c:a', 'libmp3lame', '-q:a', '2', '-metadata', 'title=' + candidate.label, mp3)
-      const measured = measure(mp3, 'ebur128=peak=true')
-      if (Math.abs(measured.loudness - target) > 1.1 || measured.peak >= -0.3)
-        throw new Error('试听 ' + candidate.label + ' 的响度或峰值异常。')
-      return {
-        id:candidate.id, audio:new Blob([engine.FS.readFile(mp3)], {type:'audio/mpeg'}),
-        render:{durationSeconds:duration, synthesisMs, encodingMs:performance.now() - started,
-          targetLufs:target, lufs:measured.loudness, peakDbfs:measured.peak}
-      }
-    })
+    const results = []
+    for (const {path, candidate, duration, filters, loudness, synthesisMs} of rendered) {
+      notify('编码 ' + candidate.label + ' · ' + (results.length + 1) + ' / ' + listening.length)
+      results.push(await measured('mp3_encode', {candidateId:candidate.id, label:candidate.label}, () => {
+        const started = performance.now()
+        const mp3 = candidate.label + '.mp3'
+        ffmpeg('-loglevel', 'error', '-i', path, '-af', filters + ',volume=' + (target - loudness).toFixed(3) + 'dB',
+          '-c:a', 'libmp3lame', '-q:a', '2', '-metadata', 'title=' + candidate.label, mp3)
+        const result = measure(mp3, 'ebur128=peak=true')
+        if (Math.abs(result.loudness - target) > 1.1 || result.peak >= -0.3)
+          throw new Error('试听 ' + candidate.label + ' 的响度或峰值异常。')
+        return {
+          id:candidate.id, audio:new Blob([engine.FS.readFile(mp3)], {type:'audio/mpeg'}),
+          render:{durationSeconds:duration, synthesisMs, encodingMs:performance.now() - started,
+            targetLufs:target, lufs:result.loudness, peakDbfs:result.peak}
+        }
+      }))
+    }
+    return results
   } finally {
     for (const {label} of listening) {
       for (const extension of ['.wav', '.mp3']) {
@@ -163,7 +186,7 @@ async function render(score, listening, catalog, notify) {
 
 self.onmessage = async ({data}) => {
   try {
-    await prepare(data.font, data.codec)
+    await measured('worker_init', {}, () => prepare(data.font, data.codec))
     const results = await render(data.score, data.listening, data.timbres,
       status => self.postMessage({status}))
     self.postMessage({results})

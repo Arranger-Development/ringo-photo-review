@@ -1,9 +1,10 @@
 import {dimensions, makeRating} from './library.js'
-import {defaultEndpoint, defaultModel, endpointFrom, generate} from './qwen.js?v=3'
+import {defaultEndpoint, defaultModel, endpointFrom, generate} from './qwen.js?v=4'
 import {duration, hash, id, now, renderVersion, validatePhoto} from './score.js'
-import {getAudio, renderJob} from './renderer.js?v=2'
-import {all, get, photoKey, put} from './storage.js'
-import {exportRatings, exportRuns, importDeck, mergeResults, ratingKey, saveFile, saveRating} from './packages.js'
+import {getAudio, renderJob} from './renderer.js?v=3'
+import {all, allKeys, get, photoKey, put} from './storage.js?v=2'
+import {exportRatings, exportRuns, importDeck, mergeResults, ratingKey, saveFile, saveRating} from './packages.js?v=2'
+import {failure, importAuditFiles, recordEvent, redactText, startTrace} from './diagnostics.js?v=1'
 
 const element = id => document.getElementById(id)
 const phaseNames = {queued:'待生成', intent:'千问读图', arrange:'千问编配', repair:'补生成',
@@ -17,6 +18,7 @@ let deckPhotos = []
 let deckRatings = []
 let currentRender
 let renderLoop = false
+let hasArchiveLogs = false
 let singleRenderEpoch = 0
 let deckRenderEpoch = 0
 const singleURLs = new Set()
@@ -55,12 +57,19 @@ function labelControl(text, control) {
   return label
 }
 
-function play(label, blob, urls) {
+function play(candidate, blob, urls, job, packId) {
   const player = node('audio', undefined, {controls:true, preload:'none', src:src(blob, urls)})
-  player.setAttribute('aria-label', '试听 ' + label)
+  const context = {photoId:job.id, candidateId:candidate.id, label:candidate.label, packId}
+  player.setAttribute('aria-label', '试听 ' + candidate.label)
   player.addEventListener('play', () => {
     for (const other of document.querySelectorAll('audio')) if (other !== player) other.pause()
+    void recordEvent('browser', 'playback', 'started', context)
   })
+  player.addEventListener('playing', () => void recordEvent('browser', 'playback', 'playing', context))
+  player.addEventListener('ended', () => void recordEvent('browser', 'playback', 'succeeded',
+    {...context, playbackSeconds:player.currentTime}))
+  player.addEventListener('error', () => void recordEvent('browser', 'playback', 'failed', {...context,
+    errorCode:'media_playback_failed', mediaErrorCode:player.error?.code, error:player.error?.message}))
   return player
 }
 
@@ -95,7 +104,7 @@ function orderedRuns() {
 function renderRunList() {
   const list = orderedRuns()
   element('run-count').textContent = list.length ? list.length + ' 条记录' : '暂无记录'
-  element('export-runs').disabled = !list.length || active.size > 0
+  element('export-runs').disabled = (!list.length && !hasArchiveLogs) || active.size > 0
   element('run-list').replaceChildren(...list.map(job => {
     const row = node('button', undefined, {type:'button', title:job.name})
     row.toggleAttribute('aria-current', job.id === selectedRun)
@@ -174,14 +183,14 @@ async function renderSingle() {
     for (const candidate of job.listening) {
       const track = audio.find(item => item.id === candidate.id)
       const view = node('div', undefined, {className:'player'})
-      view.append(node('strong', candidate.label), play(candidate.label, track.audio, singleURLs))
+      view.append(node('strong', candidate.label), play(candidate, track.audio, singleURLs, job))
       players.append(view)
     }
     target.append(players)
   }
   if (!active.has(job.id) && job.phase !== 'ready') {
     const retry = node('button', '继续 / 重试', {type:'button'})
-    retry.addEventListener('click', () => void processSingle(job))
+    retry.addEventListener('click', () => void processSingle(job, undefined, true))
     target.append(retry)
   }
   const log = callLog(job)
@@ -204,9 +213,25 @@ function changed(job) {
   if (selectedRun === job.id) void renderSingle()
 }
 
-async function runSingle(job, supplied) {
+const currentKey = () => element('key').value.trim()
+const diagnosticFailure = (error, code) => ({...failure(error, code), error:redactText(error?.message ?? String(error), currentKey())})
+
+window.addEventListener('error', event => {
+  if (!event.message) return
+  void recordEvent('browser', 'uncaught_error', 'failed', {
+    ...diagnosticFailure(event.error ?? event.message, 'uncaught_error'), line:event.lineno
+  })
+})
+window.addEventListener('unhandledrejection', event => {
+  void recordEvent('browser', 'uncaught_error', 'failed', diagnosticFailure(event.reason, 'unhandled_rejection'))
+})
+
+async function runSingle(job, supplied, isRetry) {
   if (active.has(job.id)) return
   active.add(job.id)
+  const trace = startTrace('browser', isRetry ? 'retry' : 'generation', {
+    photoId:job.id, attempt:job.score ? job.attempt : job.attempt + 1, previousPhase:job.phase
+  })
   status('single-status', '')
   element('generate-button').disabled = true
   try {
@@ -216,12 +241,13 @@ async function runSingle(job, supplied) {
     await put('runs', job.id, job)
     changed(job)
     const began = performance.now()
-    const event = {kind:'render', startedAt:now(), attempt:job.attempt, renderVersion}
+    const event = {kind:'render', startedAt:now(), attempt:job.attempt, renderVersion, telemetry:true}
     try {
       const audio = await renderJob(job, message => status('single-status', message))
       event.outcome = 'ready'
       event.candidates = audio.map(({id, render, audioSha256}) => ({id, render, audioSha256}))
       job.phase = 'ready'
+      await trace.finish('succeeded')
       status('single-status', '试听已保存。')
     } catch (error) {
       event.outcome = 'failed'
@@ -231,26 +257,34 @@ async function runSingle(job, supplied) {
       job.events.push({...event, endedAt:now(), durationMs:duration(began)})
     }
   } catch (error) {
+    const stage = job.phase
     job.phase = 'failed'
-    job.error = error.message
-    status('single-status', error.message, true)
+    const details = diagnosticFailure(error, stage === 'rendering' ? 'render_failed' : 'generation_failed')
+    job.error = details.error
+    await trace.finish('failed', {...details, failedStage:stage})
+    status('single-status', job.error, true)
   } finally {
     active.delete(job.id)
     element('generate-button').disabled = active.size > 0
     try { await put('runs', job.id, job) } catch (error) {
+      void recordEvent('browser', 'generation_save', 'failed', {photoId:job.id, attempt:job.attempt,
+        ...diagnosticFailure(error, 'storage_write_failed')})
       status('single-status', '无法保存浏览器数据 · ' + error.message, true)
     }
     changed(job)
   }
 }
 
-async function processSingle(job, supplied) {
-  if (!navigator.locks) return runSingle(job, supplied)
+async function processSingle(job, supplied, isRetry = false) {
+  if (!navigator.locks) return runSingle(job, supplied, isRetry)
   return navigator.locks.request('ringo-generate-' + job.id, {ifAvailable:true}, async lock => {
-    if (!lock) return status('single-status', '该照片已在另一个标签页处理。')
+    if (!lock) {
+      void recordEvent('browser', 'retry', 'skipped', {photoId:job.id, errorCode:'already_processing'})
+      return status('single-status', '该照片已在另一个标签页处理。')
+    }
     const saved = await get('runs', job.id)
     if (saved?.phase === 'ready') return changed(saved)
-    await runSingle(saved ?? job, supplied)
+    await runSingle(saved ?? job, supplied, isRetry)
   })
 }
 
@@ -258,47 +292,81 @@ element('generate').addEventListener('submit', async event => {
   event.preventDefault()
   if (active.size) return
   element('generate-button').disabled = true
+  const photo = element('photo-input').files[0]
+  const photoId = id()
+  const trace = startTrace('browser', 'photo_select', {photoId, mimeType:photo?.type, imageBytes:photo?.size})
+  hasArchiveLogs = true
   try {
     const supplied = config()
-    const photo = element('photo-input').files[0]
     if (!photo) throw new Error('请先选择一张照片。')
     await validatePhoto(photo)
     const job = {
-      id:id(), name:photo.name.slice(0, 255), photo, mimeType:photo.type, photoSha256:await hash(photo), createdAt:now(),
+      id:photoId, name:photo.name.slice(0, 255), photo, mimeType:photo.type, photoSha256:await hash(photo), createdAt:now(),
       count:Number(element('count').value), renderVersion, attempt:0, calls:[], events:[], phase:'queued'
     }
     await put('runs', job.id, job)
+    await trace.finish('succeeded', {photoSha256:job.photoSha256, candidateCount:job.count})
     selectedRun = job.id
     changed(job)
     element('photo-input').value = ''
     await processSingle(job, supplied)
   } catch (error) {
+    await trace.finish('failed', diagnosticFailure(error, 'photo_selection_failed'))
     status('single-status', error.message, true)
+    renderRunList()
   } finally { element('generate-button').disabled = active.size > 0 }
 })
 
-async function withDownload(button, where, create, name) {
+async function withDownload(button, where, create, name, context) {
+  const trace = startTrace('browser', 'zip_export', context)
   button.disabled = true
   status(where, '正在打包…')
   try {
-    saveFile(await create(), name + '-' + datePart() + '.zip')
+    const bundle = await create()
+    saveFile(bundle, name + '-' + datePart() + '.zip')
+    await trace.finish('handed_to_browser', {zipBytes:bundle.size})
     status(where, '打包完成。')
-  } catch (error) { status(where, error.message, true) }
+  } catch (error) {
+    await trace.finish('failed', diagnosticFailure(error, 'zip_export_failed'))
+    status(where, error.message, true)
+  }
   finally { button.disabled = false }
 }
 element('export-runs').addEventListener('click', event => {
-  void withDownload(event.currentTarget, 'single-status', () => exportRuns(orderedRuns().reverse()), 'Ringo-我的编配库')
+  void withDownload(event.currentTarget, 'single-status', () => exportRuns(orderedRuns().reverse()), 'Ringo-我的编配库', {scope:'generation'})
 })
+element('import-audit').addEventListener('change', async event => {
+  const input = event.currentTarget
+  if (!input.files.length) return
+  input.disabled = true
+  const trace = startTrace('browser', 'audit_import', {scope:'generation', fileCount:input.files.length})
+  hasArchiveLogs = true
+  try {
+    const result = await importAuditFiles([...input.files], orderedRuns(), currentKey())
+    await trace.finish('succeeded', result)
+    status('single-status', '审计日志 · 匹配 ' + result.matched + ' · 重复 ' + result.duplicate +
+      ' · 未匹配 ' + result.unmatched + ' · 格式错误 ' + result.invalid)
+  } catch (error) {
+    await trace.finish('failed', diagnosticFailure(error, 'audit_import_failed'))
+    status('single-status', error.message, true)
+  } finally { input.value = ''; input.disabled = false; renderRunList() }
+})
+
 element('import-results').addEventListener('change', async event => {
   const input = event.currentTarget
   const file = input.files[0]
   if (!file) return
   input.disabled = true
+  const trace = startTrace('browser', 'rating_merge', {scope:'merge', zipBytes:file.size})
   try {
-    const {added, skipped} = await mergeResults(file, orderedRuns())
+    const {added, skipped, sourcePackId} = await mergeResults(file, orderedRuns())
+    await trace.finish('succeeded', {added, skipped, sourcePackId})
     status('single-status', '合并 ' + added + ' 条评分 · 跳过 ' + skipped + ' 条已有、较旧或不匹配的评分。')
     await updateMerged()
-  } catch (error) { status('single-status', error.message, true) }
+  } catch (error) {
+    await trace.finish('failed', diagnosticFailure(error, 'rating_merge_failed'))
+    status('single-status', error.message, true)
+  }
   finally { input.value = ''; input.disabled = false }
 })
 async function updateMerged() {
@@ -308,7 +376,7 @@ element('export-merged').addEventListener('click', event => {
   void withDownload(event.currentTarget, 'single-status', async () => {
     const records = (await all('ratings')).filter(item => item.scope === 'mine')
     return exportRatings(null, records, new Set(records.map(item => item.photoId)).size)
-  }, 'Ringo-汇总评分')
+  }, 'Ringo-汇总评分', {scope:'merge'})
 })
 
 const reviewer = () => element('rater').value.trim()
@@ -353,7 +421,7 @@ function scoresForm(job, audio, deck) {
   for (const candidate of job.listening) {
     const track = audio.find(item => item.id === candidate.id)
     const card = node('fieldset', undefined, {className:'player'})
-    card.append(node('legend', candidate.label), play(candidate.label, track.audio, deckURLs))
+    card.append(node('legend', candidate.label), play(candidate, track.audio, deckURLs, job, deck.id))
     const row = node('div', undefined, {className:'dimensions'})
     const points = {}
     for (const [key, label] of Object.entries(dimensions)) {
@@ -397,6 +465,8 @@ function scoresForm(job, audio, deck) {
     event.preventDefault()
     save.disabled = next.disabled = true
     message.classList.remove('error')
+    const trace = startTrace('browser', 'rating_save', {packId:deck.id, photoId:job.id,
+      candidateCount:job.listening.length})
     try {
       if (!rater) throw new Error('请先填写评审名。')
       const scores = {}
@@ -408,8 +478,9 @@ function scoresForm(job, audio, deck) {
         if (fields.favorite.checked) favorites.push(id)
       }
       const record = makeRating({...job, candidates:job.listening}, rater,
-        {scores, favorites, usable, none:none.checked, note:note.value})
+        {scores, favorites, usable, none:none.checked, note:redactText(note.value, currentKey())})
       await saveRating(deck.id, record)
+      await trace.finish('succeeded')
       if (deck !== currentDeck) return
       const key = ratingKey(deck.id, record)
       deckRatings = deckRatings.filter(item => ratingKey(deck.id, item) !== key).concat({...record, scope:deck.id})
@@ -420,7 +491,11 @@ function scoresForm(job, audio, deck) {
         else status('review-status', currentRatings().length === deck.photos.length
           ? '这份编配包已全部评完，可以下载结果 ZIP。' : '已到最后一张，可从进度选择尚未评的照片。')
       }
-    } catch (error) { message.textContent = error.message; message.classList.add('error') }
+    } catch (error) {
+      await trace.finish('failed', diagnosticFailure(error, 'rating_save_failed'))
+      message.textContent = error.message
+      message.classList.add('error')
+    }
     finally { save.disabled = next.disabled = false }
   })
   return form
@@ -456,7 +531,11 @@ async function renderCard() {
     target.append(node('p', text, {className:job.phase === 'failed' ? 'error' : 'muted'}))
     if (job.phase === 'failed') {
       const retry = node('button', '重试这张', {type:'button'})
-      retry.addEventListener('click', () => { job.phase = 'queued'; void processDeck() })
+      retry.addEventListener('click', () => {
+        void recordEvent('browser', 'render_retry', 'queued', {packId:deck.id, photoId:job.id, attempt:(job.renderAttempt ?? 0) + 1})
+        job.phase = 'queued'
+        void processDeck()
+      })
       target.append(retry)
     }
   }
@@ -471,14 +550,17 @@ async function processDeck() {
       const job = deckPhotos.find(photo => photo.phase === 'queued' || photo.phase === 'rendering')
       if (!job) break
       currentRender = {deckId:deck.id, job}
+      if (job.phase === 'rendering') void recordEvent('browser', 'render_resume', 'queued', {
+        packId:deck.id, photoId:job.id, attempt:job.renderAttempt
+      })
       job.phase = 'rendering'
+      job.renderAttempt = (job.renderAttempt ?? 0) + 1
+      await put('photos', photoKey(deck.id, job.id), job)
       if (currentDeck === deck) deckProgress()
       try {
-        const cached = await getAudio(job)
-        if (!cached && job.cachedOnly) throw new Error('旧 ZIP 的音频缓存缺失，请重新导入原 ZIP。')
-        if (!cached) await renderJob(job, message => {
+        await renderJob(job, message => {
           if (currentDeck === deck) status('review-status', '第 ' + (deck.photos.indexOf(job.id) + 1) + ' 张 · ' + message)
-        })
+        }, deck.id)
         job.phase = 'ready'
         job.error = undefined
       } catch (error) {
@@ -491,7 +573,11 @@ async function processDeck() {
         if (deck.photos[deck.selected] === job.id) await renderCard()
       }
     }
-  } catch (error) { status('review-status', '无法保存听评进度 · ' + error.message, true) }
+  } catch (error) {
+    void recordEvent('browser', 'review_progress_save', 'failed', {packId:currentDeck?.id,
+      photoId:currentRender?.job.id, ...diagnosticFailure(error, 'storage_write_failed')})
+    status('review-status', '无法保存听评进度 · ' + error.message, true)
+  }
   finally {
     renderLoop = false
     currentRender = undefined
@@ -532,13 +618,21 @@ element('import-deck').addEventListener('change', async event => {
   if (!file) return
   input.disabled = true
   status('review-status', '正在检查并导入 ZIP…')
+  const trace = startTrace('browser', 'zip_import', {scope:'review', zipBytes:file.size})
+  hasArchiveLogs = true
+  let importedPackId
   try {
     const deck = await importDeck(file)
+    importedPackId = deck.id
     decks.set(deck.id, deck)
+    await trace.finish('succeeded', {packId:deck.id, photoCount:deck.photos.length, skipped:deck.skipped})
     status('review-status', '导入完成 · ' + deck.photos.length + ' 张。')
     await openDeck(deck)
-  } catch (error) { status('review-status', error.message, true) }
-  finally { input.disabled = false; input.value = '' }
+  } catch (error) {
+    await trace.finish('failed', {packId:importedPackId, ...diagnosticFailure(error, 'zip_import_failed')})
+    status('review-status', error.message, true)
+  }
+  finally { input.disabled = false; input.value = ''; renderRunList() }
 })
 element('deck-select').addEventListener('change', event => {
   void openDeck(decks.get(event.currentTarget.value)).catch(error => status('review-status', error.message, true))
@@ -550,13 +644,18 @@ element('rater').addEventListener('change', async () => {
   await renderCard()
 })
 element('retry-renders').addEventListener('click', () => {
-  for (const job of deckPhotos) if (job.phase === 'failed') job.phase = 'queued'
+  for (const job of deckPhotos) {
+    if (job.phase !== 'failed') continue
+    void recordEvent('browser', 'render_retry', 'queued', {packId:currentDeck.id, photoId:job.id,
+      attempt:(job.renderAttempt ?? 0) + 1})
+    job.phase = 'queued'
+  }
   void processDeck()
 })
 element('export-ratings').addEventListener('click', event => {
   const deck = currentDeck
   void withDownload(event.currentTarget, 'review-status',
-    () => exportRatings(deck.id, currentRatings(), deck.photos.length), 'Ringo-听评结果')
+    () => exportRatings(deck.id, currentRatings(), deck.photos.length), 'Ringo-听评结果', {packId:deck.id, scope:'review'})
 })
 
 async function restoreRun(run) {
@@ -567,12 +666,16 @@ async function restoreRun(run) {
     for (const call of latest.calls) {
       if (call.requestEndedAt || call.outcome === 'interrupted') continue
       call.outcome = 'interrupted'
+      call.errorCode = 'page_interrupted'
       call.interruptionObservedAt = now()
       call.error = '页面中断，未记录到完整回包。'
     }
+    const phase = latest.phase
     latest.phase = 'failed'
     latest.error = '上次处理已中断。可从已保存的阶段继续。'
     await put('runs', latest.id, latest)
+    await recordEvent('browser', 'page_interrupt', 'interrupted', {photoId:latest.id,
+      attempt:latest.attempt, interruptedStage:phase, errorCode:'page_interrupted'})
     return latest
   }
   return navigator.locks
@@ -581,6 +684,7 @@ async function restoreRun(run) {
 }
 
 async function restore() {
+  hasArchiveLogs ||= (await allKeys('audits')).length > 0 || (await allKeys('diagnostics')).length > 0
   for (const run of await all('runs')) runs.set(run.id, await restoreRun(run))
   selectedRun = orderedRuns()[0]?.id
   renderRunList()

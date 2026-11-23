@@ -2,16 +2,23 @@ let loading
 
 function database() {
   loading ??= new Promise((resolve, reject) => {
-    const request = indexedDB.open('ringo-photo-review', 1)
+    const request = indexedDB.open('ringo-photo-review', 2)
     request.onupgradeneeded = () => {
-      for (const name of ['runs', 'decks', 'photos', 'audio', 'ratings', 'settings'])
-        request.result.createObjectStore(name)
+      for (const name of ['runs', 'decks', 'photos', 'audio', 'ratings', 'settings', 'diagnostics', 'audits']) {
+        if (!request.result.objectStoreNames.contains(name)) request.result.createObjectStore(name)
+      }
     }
+    let blocked = false
     request.onsuccess = () => {
+      if (blocked) { request.result.close(); return }
       request.result.onversionchange = () => { request.result.close(); loading = undefined }
       resolve(request.result)
     }
     request.onerror = () => reject(request.error)
+    request.onblocked = () => {
+      blocked = true
+      reject(new Error('请关闭其他打开 Ringo 的旧标签页，再刷新以升级本地记录。'))
+    }
   }).catch(error => { loading = undefined; throw error })
   return loading
 }
